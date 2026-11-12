@@ -1,0 +1,17 @@
+@tailwind base;@tailwind components;@tailwind utilities;
+body{background:#030407;color:#E8ECF4;font-family:'Plus Jakarta Sans',Inter,system-ui,sans-serif}
+@layer components{
+.card{@apply rounded-xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_0_30px_-14px_#1558C9]}
+.btn{@apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lime}
+.btn-p{@apply btn bg-lime text-ink hover:brightness-110}
+.btn-s{@apply btn bg-blue text-white hover:bg-blue/80}
+.inp{@apply rounded-lg border border-white/15 bg-ink px-3 py-2 text-sm text-white focus:border-lime focus:outline-none}
+.th{@apply px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-white/60}
+.td{@apply px-3 py-3 text-sm border-t border-white/10}}
+@keyframes scan{from{transform:translateY(-10px)}to{transform:translateY(430px)}}
+@keyframes breathe{0%,100%{opacity:.8;transform:scale(1)}50%{opacity:1;transform:scale(1.012)}}
+@keyframes flick{0%,100%{opacity:.3}50%{opacity:1}}
+.fp-scan{animation:scan 5.5s ease-in-out infinite alternate}
+.fp-pulse{animation:breathe 6s ease-in-out infinite;transform-origin:200px 250px}
+.fp-flick{animation:flick 5s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.fp-scan,.fp-pulse,.fp-flick{animation:none!important}}
