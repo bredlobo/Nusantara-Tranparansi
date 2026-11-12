@@ -205,3 +205,4 @@ CREATE INDEX IF NOT EXISTS idx_blockchain_records_hash ON blockchain_records(has
 CREATE INDEX IF NOT EXISTS idx_blockchain_records_status ON blockchain_records(status);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_record ON audit_logs(table_name, record_id);
 CREATE INDEX IF NOT EXISTS idx_ai_anomalies_priority ON ai_anomalies(priority);
+

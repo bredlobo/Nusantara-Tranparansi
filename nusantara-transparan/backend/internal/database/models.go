@@ -186,3 +186,4 @@ type AnomalyFinding struct {
 	CreatedAt      time.Time       `json:"created_at"`
 	BaseMetadata
 }
+

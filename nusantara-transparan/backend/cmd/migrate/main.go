@@ -32,3 +32,4 @@ func main() {
 
 	log.Println("🚀 Operasi database selesai dengan sukses!")
 }
+
