@@ -80,3 +80,4 @@ Setiap perancangan dan penulisan kode wajib mematuhi 9 prinsip mutlak berikut:
 | **4** | **AI, Machine Learning, dan AI Assistant** | Pembuatan modul deteksi anomali (Scikit-learn/Pandas) dan pipeline RAG/LLM untuk asisten keuangan. |
 | **5** | **Integrasi, Keamanan, dan Pengujian** | Integrasi end-to-end antar modul, audit keamanan, rate limiting, role-based access, dan unit/integration testing. |
 | **6** | **Pilot APBN Nasional dan Evaluasi** | Uji coba publik terbatas dengan data real APBN, pengumpulan umpan balik pengguna, dan evaluasi performa. |
+

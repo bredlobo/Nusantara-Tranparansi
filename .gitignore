@@ -12,6 +12,8 @@ pnpm-debug.log*
 
 # Go / Backend
 backend/bin/
+backend/vendor/
+vendor/
 *.exe
 *.exe~
 *.dll
