@@ -9,9 +9,12 @@ nusantara-transparan/
 │
 ├── frontend/                   # Web interface (React + Vite + Tailwind + TypeScript)
 │   ├── src/                    # Source code frontend
-│   ├── components/             # Reusable UI components
-│   ├── pages/                  # Page views
-│   └── services/               # API service layer
+│   │   ├── components/         # Reusable UI components
+│   │   ├── pages/              # Halaman / Views aplikasi
+│   │   ├── services/           # API service layer & mock fetcher
+│   │   ├── data/               # Mock data (DEMO)
+│   │   ├── hooks/              # Custom React hooks
+│   │   └── types/              # TypeScript definitions
 │
 ├── backend/                    # Core API service (Go)
 │   ├── cmd/                    # Entrypoints aplikasi
