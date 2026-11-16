@@ -117,3 +117,37 @@ func TestLoginBruteForceLockout(t *testing.T) {
 
 	resetLoginAttempts(testKey)
 }
+
+func TestInAppWAFBlocksAttacksAndScanners(t *testing.T) {
+	handler := SecurityAndCORSMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// 1. Uji Blokir SQL Injection di URL Query
+	reqSQLi := httptest.NewRequest(http.MethodGet, "/api/v1/projects?q=1+UNION+SELECT+username,password_hash+FROM+users", nil)
+	reqSQLi.RemoteAddr = "10.99.99.1:12345"
+	recSQLi := httptest.NewRecorder()
+	handler.ServeHTTP(recSQLi, reqSQLi)
+	if recSQLi.Code != http.StatusForbidden {
+		t.Fatalf("WAF seharusnya memblokir SQL Injection dengan 403, dapat: %d", recSQLi.Code)
+	}
+
+	// 2. Uji Blokir XSS Payload
+	reqXSS := httptest.NewRequest(http.MethodGet, "/api/v1/projects?q=<script>alert(1)</script>", nil)
+	reqXSS.RemoteAddr = "10.99.99.2:12345"
+	recXSS := httptest.NewRecorder()
+	handler.ServeHTTP(recXSS, reqXSS)
+	if recXSS.Code != http.StatusForbidden {
+		t.Fatalf("WAF seharusnya memblokir XSS dengan 403, dapat: %d", recXSS.Code)
+	}
+
+	// 3. Uji Blokir Scanner Otomatis (sqlmap User-Agent)
+	reqScanner := httptest.NewRequest(http.MethodGet, "/api/v1/revenue", nil)
+	reqScanner.Header.Set("User-Agent", "sqlmap/1.8.2#stable")
+	reqScanner.RemoteAddr = "10.99.99.3:12345"
+	recScanner := httptest.NewRecorder()
+	handler.ServeHTTP(recScanner, reqScanner)
+	if recScanner.Code != http.StatusForbidden {
+		t.Fatalf("WAF seharusnya memblokir scanner sqlmap dengan 403, dapat: %d", recScanner.Code)
+	}
+}

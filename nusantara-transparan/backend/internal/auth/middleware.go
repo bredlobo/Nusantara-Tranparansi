@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,8 @@ import (
 type ipVisitor struct {
 	count     int
 	windowEnd time.Time
+	strikes   int
+	bannedTil time.Time
 }
 
 var (
@@ -23,36 +26,122 @@ var (
 )
 
 const (
-	rateLimitMaxRequests = 120 // Maksimal 120 request per menit per IP (Anti-DDoS & Brute Force)
-	rateLimitWindow      = time.Minute
-	maxBodyBytes         = 1 << 20 // Maksimal ukuran body 1 MB (Mitigasi CWE-400 Resource Exhaustion)
+	rateLimitMaxRequests = 120             // Maksimal 120 request per menit per IP
+	rateLimitWindow      = time.Minute     // Jendela waktu 1 menit
+	maxBodyBytes         = 1 << 20         // Maksimal ukuran body 1 MB (Mitigasi CWE-400)
+	maxWAFStrikes        = 3               // 3x terdeteksi kirim payload serangan -> Auto-Ban IP!
+	ipBanDuration        = 15 * time.Minute
 )
 
-// allowIP memeriksa batas rate limit per alamat IP
-func allowIP(ip string) bool {
+// Daftar pola serangan berbahaya yang dicegat oleh In-App WAF (SQLi, XSS, Path Traversal)
+var maliciousPatterns = []string{
+	"union select",
+	"drop table",
+	"insert into",
+	"delete from",
+	"update users",
+	"' or '1'='1",
+	"\" or \"1\"=\"1",
+	"--",
+	"<script",
+	"javascript:",
+	"onerror=",
+	"onload=",
+	"../",
+	"..\\",
+	"/etc/passwd",
+	"cmd.exe",
+	"powershell",
+}
+
+// Daftar User-Agent scanner peretas otomatis yang langsung diblokir
+var blockedScanners = []string{
+	"sqlmap",
+	"nikto",
+	"nmap",
+	"masscan",
+	"acunetix",
+	"dirbuster",
+	"gobuster",
+	"nuclei",
+	"zgrab",
+}
+
+// checkAndRecordIP memeriksa apakah IP di-ban atau melampaui rate limit
+func checkAndRecordIP(ip string) (allowed bool, isBanned bool) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	now := time.Now()
 	v, exists := visitors[ip]
-	if !exists || now.After(v.windowEnd) {
+	if !exists {
 		visitors[ip] = &ipVisitor{
 			count:     1,
 			windowEnd: now.Add(rateLimitWindow),
 		}
-		return true
+		return true, false
+	}
+
+	// Cek apakah IP sedang dalam masa Auto-Ban akibat serangan WAF
+	if !v.bannedTil.IsZero() && now.Before(v.bannedTil) {
+		return false, true
+	}
+
+	if now.After(v.windowEnd) {
+		v.count = 1
+		v.windowEnd = now.Add(rateLimitWindow)
+		return true, false
 	}
 
 	v.count++
-	return v.count <= rateLimitMaxRequests
+	return v.count <= rateLimitMaxRequests, false
 }
 
-// SecurityAndCORSMiddleware menerapkan standar keamanan siber web menyeluruh:
-// - CORS Policy
-// - HTTP Security Headers & HSTS (Checklist #6 & #10)
-// - Per-IP Rate Limiting Anti-DDoS (Checklist #7)
-// - Request Payload Size Limit (CWE Top 25)
-// - Real-Time Audit & Access Logging (Checklist #8)
+// recordWAFStrike mencatat pelanggaran keamanan (SQLi/XSS/Scanner); jika >= 3 strike, IP otomatis di-ban 15 menit
+func recordWAFStrike(ip string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+
+	v, exists := visitors[ip]
+	if !exists {
+		v = &ipVisitor{windowEnd: time.Now().Add(rateLimitWindow)}
+		visitors[ip] = v
+	}
+	v.strikes++
+	if v.strikes >= maxWAFStrikes {
+		v.bannedTil = time.Now().Add(ipBanDuration)
+		return true
+	}
+	return false
+}
+
+// InspectMaliciousRequest memeriksa URL, Query, dan User-Agent terhadap serangan SQLi, XSS, Path Traversal, & Scanner
+func InspectMaliciousRequest(r *http.Request) (bool, string) {
+	ua := strings.ToLower(r.Header.Get("User-Agent"))
+	for _, scanner := range blockedScanners {
+		if strings.Contains(ua, scanner) {
+			return true, "Blocked Automated Vulnerability Scanner (" + scanner + ")"
+		}
+	}
+
+	rawTarget, _ := url.QueryUnescape(r.URL.RequestURI())
+	lowerTarget := strings.ToLower(rawTarget)
+	for _, pattern := range maliciousPatterns {
+		if strings.Contains(lowerTarget, pattern) {
+			return true, "Blocked Malicious Payload Pattern (" + pattern + ")"
+		}
+	}
+
+	return false, ""
+}
+
+// SecurityAndCORSMiddleware menerapkan pertahanan berlapis (Defense-in-Depth):
+// 1. CORS & Metode HTTP Valid
+// 2. HTTP Security Headers (HSTS, CSP, X-Frame-Options, Permissions-Policy)
+// 3. In-App WAF & IPS (Mendeteksi & memblokir SQLi, XSS, Path Traversal, dan Scanner seperti sqlmap/nikto)
+// 4. Auto-IP Banning (3x serangan WAF = Ban IP 15 menit)
+// 5. Per-IP Rate Limiting Anti-DDoS (120 req/menit)
+// 6. Request Body Size Limit (1 MB)
 func SecurityAndCORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -67,7 +156,7 @@ func SecurityAndCORSMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-User-Role, X-MFA-Code")
 
-		// 2. HTTP Security Headers (Standar Keamanan Siber Web & OWASP)
+		// 2. HTTP Security Headers
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
@@ -76,18 +165,33 @@ func SecurityAndCORSMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
-		// Preflight OPTIONS
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		// 3. Rate Limiting per IP (Proteksi Anti-DDoS & Brute Force)
+		// Tolak metode HTTP mencurigakan (TRACE / CONNECT)
+		if r.Method == http.MethodTrace || r.Method == http.MethodConnect {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
 		clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
 		if err != nil {
 			clientIP = r.RemoteAddr
 		}
-		if !allowIP(clientIP) {
+
+		// 3. Periksa Rate Limit & Status Auto-Ban IP
+		allowed, isBanned := checkAndRecordIP(clientIP)
+		if isBanned {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "WAF IPS BLOCK: Alamat IP Anda diblokir sementara selama 15 menit karena aktivitas serangan berulang.",
+			})
+			return
+		}
+		if !allowed {
 			log.Printf("[SECURITY ALERT] Rate limit exceeded dari IP: %s pada %s", clientIP, r.URL.Path)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -97,19 +201,31 @@ func SecurityAndCORSMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// 4. Batasi ukuran body request maksimal 1 MB (Mitigasi CWE-400)
+		// 4. In-App WAF Inspection (SQLi, XSS, Path Traversal, Vulnerability Scanners)
+		if isMalicious, reason := InspectMaliciousRequest(r); isMalicious {
+			bannedNow := recordWAFStrike(clientIP)
+			log.Printf("[WAF BLOCKED] Serangan dicegat dari IP %s: %s (Banned: %v)", clientIP, reason, bannedNow)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "WAF SECURITY BLOCK: Permintaan ditolak karena terdeteksi pola berbahaya (" + reason + ").",
+			})
+			return
+		}
+
+		// 5. Batasi ukuran body request maksimal 1 MB
 		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
-		// 5. Eksekusi Handler
+		// 6. Eksekusi Handler
 		next.ServeHTTP(w, r)
 
-		// 6. Real-Time Security & Access Logging
+		// 7. Real-Time Security & Access Logging
 		log.Printf("[AUDIT-LOG] %s %s | %v | IP: %s | Role: %s",
 			r.Method, r.URL.Path, time.Since(start), clientIP, getRoleFromRequest(r))
 	})
 }
 
-// RequireRole menerapkan Role-Based Access Control (RBAC - Checklist #3) dan opsional MFA (Checklist #2)
+// RequireRole menerapkan Role-Based Access Control (RBAC) dan opsional MFA
 func RequireRole(requireMFA bool, allowedRoles ...database.UserRole) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
