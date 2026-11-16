@@ -11,9 +11,6 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Global DB instance
-var DB *gorm.DB
-
 // InitDB menginisialisasi koneksi GORM ke PostgreSQL (dan otomatis membuat DB jika belum ada)
 func InitDB() (*gorm.DB, error) {
 	_ = godotenv.Load() // Muat .env jika ada
@@ -43,7 +40,6 @@ func InitDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("gagal terhubung ke database PostgreSQL: %w", err)
 	}
 
-	DB = db
 	log.Println("✅ Berhasil terhubung ke database PostgreSQL via GORM.")
 	return db, nil
 }

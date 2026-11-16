@@ -1,7 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 import { api } from '../services/api'
-import { monthly } from '../data/mock'
 import { useData } from '../hooks/useData'
 import { Head, Stat, ChartBox, Async, Table, fmt, T, tip } from '../components/ui'
 
@@ -9,15 +8,21 @@ export default function Budget({ kind }: { kind: 'revenue' | 'expenditure' }) {
   const rev = kind === 'revenue'
   const s = useData(rev ? api.revenue : api.expenditure)
   const [per, setPer] = useState('all')
-  const trend = monthly
+  const [monthlyData, setMonthlyData] = useState<{ m: string; revenue: number; spend: number; budget: number }[]>([])
+
+  useEffect(() => {
+    api.dashboard().then(d => setMonthlyData(d.monthly ?? [])).catch(() => {})
+  }, [])
+
+  const trend = monthlyData
     .filter((_, i) => per === 'all' || Math.floor(i / 3) === +per.slice(1) - 1)
-    .map(x => ({ m: x.m, v: rev ? x.revenue : x.spend }))
+    .map(x => ({ m: x.m, v: rev ? Math.round(x.revenue) : Math.round(x.spend) }))
 
   return (
     <>
       <Head
         title={rev ? 'Penerimaan Negara' : 'Pengeluaran Negara'}
-        sub={rev ? 'Pajak, Bea dan Cukai, PNBP, dan Hibah.' : 'Anggaran (pagu), realisasi, dan sisa dibedakan. Rencana bukan bukti pembayaran.'}
+        sub={rev ? 'Pajak, Bea dan Cukai, PNBP, dan Hibah.' : 'Anggaran (pagu), realisasi, dan sisa dibedakan secara tegas.'}
       />
       <select className="inp mb-6" value={per} onChange={e => setPer(e.target.value)} aria-label="Periode">
         <option value="all">Setahun</option>

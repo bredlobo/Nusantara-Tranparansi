@@ -1,31 +1,29 @@
-import * as m from '../data/mock'
-import type { ChatReply, SubmissionItem, AuditLogItem, UserItem } from '../types'
+import type { BudgetRow, Project, BlockRec, Anomaly, ChatReply, SubmissionItem, AuditLogItem, UserItem } from '../types'
 
-// Switch: VITE_USE_API=true -> Go REST backend (PostgreSQL); dilengkapi Graceful Degradation (Aturan 5)
-const USE_API = import.meta.env.VITE_USE_API !== 'false'
 const BASE: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 
-async function get<T>(path: string, mock: T): Promise<T> {
-  if (USE_API) {
-    try {
-      const r = await fetch(BASE + path)
-      if (!r.ok) throw new Error(`${path}: ${r.status}`)
-      return await r.json()
-    } catch (err) {
-      console.warn(`[Graceful Degradation] Backend ${path} belum merespons, menggunakan fallback data:`, err)
-      return mock
-    }
+async function get<T>(path: string, fallback: T): Promise<T> {
+  try {
+    const r = await fetch(BASE + path)
+    if (!r.ok) throw new Error(`${path}: ${r.status}`)
+    return await r.json()
+  } catch (err) {
+    console.warn(`[Graceful Degradation] Endpoint ${path} belum merespons, menggunakan fallback kosong:`, err)
+    return fallback
   }
-  await new Promise(r => setTimeout(r, 350))
-  return mock
 }
 
 export const api = {
-  dashboard: () => get('/dashboard', { monthly: m.monthly, ministries: m.ministries }),
-  revenue: () => get('/revenue', m.revenue),
-  expenditure: () => get('/expenditure', m.expenditure),
-  projects: () => get('/projects', m.projects),
-  records: () => get('/blockchain/records', m.records),
+  dashboard: () =>
+    get('/dashboard', {
+      monthly: MONTHS.map(m => ({ m, revenue: 0, spend: 0, budget: 0 })),
+      ministries: [] as { name: string; budget: number; real: number }[],
+    }),
+  revenue: () => get<BudgetRow[]>('/revenue', []),
+  expenditure: () => get<BudgetRow[]>('/expenditure', []),
+  projects: () => get<Project[]>('/projects', []),
+  records: () => get<BlockRec[]>('/blockchain/records', []),
   verifyChain: () =>
     get('/blockchain/verify', {
       chain_intact: true,
@@ -39,24 +37,22 @@ export const api = {
     if (!r.ok) throw new Error('Gagal melakukan verifikasi hash')
     return await r.json()
   },
-  anomalies: () => get('/ai/anomalies', m.anomalies),
+  anomalies: () => get<Anomaly[]>('/ai/anomalies', []),
   async chat(question: string): Promise<ChatReply> {
-    if (USE_API) {
-      try {
-        const r = await fetch(BASE + '/ai/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question }),
-        })
-        if (!r.ok) throw new Error('chat ' + r.status)
-        return await r.json()
-      } catch (err) {
-        console.warn('[Graceful Degradation] AI Chat endpoint offline, menggunakan fallback:', err)
-        return m.chatReply(question)
+    try {
+      const r = await fetch(BASE + '/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      })
+      if (!r.ok) throw new Error('chat ' + r.status)
+      return await r.json()
+    } catch {
+      return {
+        answer: 'Layanan AI Backend sedang tidak terjangkau (Graceful Degradation). Pastikan server Go berjalan.',
+        sources: [],
       }
     }
-    await new Promise(r => setTimeout(r, 700))
-    return m.chatReply(question)
   },
 
   // Admin, Data Manager, & Auditor Workflow Endpoints (Live PostgreSQL + RBAC)
@@ -116,7 +112,6 @@ export const api = {
     return data
   },
 
-  // Tahap 6: Evaluasi Performa Pilot APBN & Umpan Balik Masyarakat
   pilotEvaluation: () =>
     get<any>('/pilot/evaluation', {
       db_latency_ms: '0.00 ms',

@@ -11,8 +11,7 @@ nusantara-transparan/
 │   ├── src/                    # Source code frontend
 │   │   ├── components/         # Reusable UI components
 │   │   ├── pages/              # Halaman / Views aplikasi
-│   │   ├── services/           # API service layer & mock fetcher
-│   │   ├── data/               # Mock data (DEMO)
+│   │   ├── services/           # API service layer (Live PostgreSQL)
 │   │   ├── hooks/              # Custom React hooks
 │   │   └── types/              # TypeScript definitions
 │
