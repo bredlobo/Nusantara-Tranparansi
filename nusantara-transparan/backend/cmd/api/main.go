@@ -27,10 +27,11 @@ func main() {
 		log.Fatalf("❌ Gagal terhubung ke database: %v", err)
 	}
 
-	// 2. Pastikan Skema Tabel & Akun Staf RBAC Siap (Tanpa Auto-Seed Dummy Data Anggaran)
+	// 2. Pastikan Skema Tabel, Data Dummy Contoh Cara Kerja, & Akun Staf RBAC Siap
 	if err := database.AutoMigrate(db); err != nil {
 		log.Fatalf("❌ Gagal AutoMigrate database: %v", err)
 	}
+	_ = database.SeedInitialData(db)
 	auth.EnsureDefaultUsers(db)
 
 	// 3. Setup HTTP Router (Go 1.22+ ServeMux)
