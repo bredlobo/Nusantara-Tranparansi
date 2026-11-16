@@ -51,11 +51,11 @@ export default function Admin() {
   const [bType, setBType] = useState<'revenue' | 'expenditure'>('revenue')
   const [category, setCategory] = useState('Penerimaan')
   const [name, setName] = useState('')
-  const [agency, setAgency] = useState('Kemenkeu RI')
-  const [region, setRegion] = useState('Nasional')
+  const [agency, setAgency] = useState('')
+  const [region, setRegion] = useState('')
   const [target, setTarget] = useState('')
   const [real, setReal] = useState('')
-  const [source, setSource] = useState('Kemenkeu RI (APBN 2026)')
+  const [source, setSource] = useState('')
   const [parsedItems, setParsedItems] = useState<any[]>([])
   const [fileName, setFileName] = useState('')
 
@@ -270,35 +270,9 @@ export default function Admin() {
   const role = session.ui_role
 
   const tabsByRole: Record<Role, string[]> = {
-    'Data Manager': ['Input & Unggah Data', 'Daftar Draf Saya', 'Evaluasi Pilot APBN', 'Audit Log'],
-    'Auditor / Reviewer': ['Antrean Verifikasi Auditor', 'Evaluasi Pilot APBN', 'Audit Log'],
-    Administrator: ['Publikasi Data Resmi', 'Manajemen Pengguna', 'Evaluasi Pilot APBN', 'Audit Log'],
-  }
-
-  async function handleLoadPilotAPBN() {
-    if (!session) return
-    const pilotDataset = [
-      { record_type: 'budget', type: 'revenue', category: 'Penerimaan', name: 'Pajak', target: 2000, real: 1480, source: 'Kemenkeu RI (Pilot APBN Nasional 2026)' },
-      { record_type: 'budget', type: 'revenue', category: 'Penerimaan', name: 'Bea dan Cukai', target: 300, real: 231, source: 'Kemenkeu RI (Pilot APBN Nasional 2026)' },
-      { record_type: 'budget', type: 'revenue', category: 'Penerimaan', name: 'PNBP', target: 480, real: 402, source: 'Kemenkeu RI (Pilot APBN Nasional 2026)' },
-      { record_type: 'budget', type: 'revenue', category: 'Penerimaan', name: 'Hibah', target: 5, real: 3, source: 'Kemenkeu RI (Pilot APBN Nasional 2026)' },
-      { record_type: 'budget', type: 'expenditure', category: 'Jenis Belanja', name: 'Belanja Pemerintah Pusat', target: 3100, real: 2210, source: 'Kemenkeu RI (Pilot APBN Nasional 2026)' },
-      { record_type: 'budget', type: 'expenditure', category: 'Jenis Belanja', name: 'Belanja Kementerian/Lembaga', target: 1250, real: 905, source: 'Kemenkeu RI (Pilot APBN Nasional 2026)' },
-      { record_type: 'budget', type: 'expenditure', category: 'Jenis Belanja', name: 'Transfer ke Daerah', target: 880, real: 702, source: 'Kemenkeu RI (Pilot APBN Nasional 2026)' },
-      { record_type: 'budget', type: 'expenditure', category: 'Fungsi', name: 'Pendidikan', target: 720, real: 510, source: 'Kemendikdasmen (Pilot APBN 2026)' },
-      { record_type: 'budget', type: 'expenditure', category: 'Fungsi', name: 'Kesehatan', target: 210, real: 148, source: 'Kemenkes RI (Pilot APBN 2026)' },
-      { record_type: 'budget', type: 'expenditure', category: 'Fungsi', name: 'Perlindungan Sosial', target: 90, real: 71, source: 'Kemensos RI (Pilot APBN 2026)' },
-      { record_type: 'project', category: 'Infrastruktur', name: 'Bendungan & Jaringan Irigasi Jawa Barat', agency: 'Kemen PUPR', region: 'Jawa Barat', target: 45, real: 36, status: 'Berjalan', source: 'Monitoring Proyek Strategis Nasional' },
-      { record_type: 'project', category: 'Kesehatan', name: 'Rumah Sakit Rujukan Regional Kalimantan Timur', agency: 'Kemenkes RI', region: 'Kalimantan Timur', target: 28, real: 27, status: 'Selesai', source: 'Monitoring Proyek Strategis Nasional' },
-    ]
-    try {
-      setStatusMsg('Mengimpor Dataset Pilot APBN Nasional 2026 ke PostgreSQL...')
-      const res = await api.importData(session.full_name, pilotDataset, session.role)
-      setStatusMsg(`✅ ${res.message}`)
-      await refreshAll()
-    } catch (err: any) {
-      setStatusMsg(`❌ Gagal: ${err.message}`)
-    }
+    'Data Manager': ['Input & Unggah Data', 'Daftar Draf Saya', 'Evaluasi & Performa Sistem', 'Audit Log'],
+    'Auditor / Reviewer': ['Antrean Verifikasi Auditor', 'Evaluasi & Performa Sistem', 'Audit Log'],
+    Administrator: ['Publikasi Data Resmi', 'Manajemen Pengguna', 'Evaluasi & Performa Sistem', 'Audit Log'],
   }
 
   async function handleManualSubmit(e: FormEvent) {
@@ -580,14 +554,6 @@ export default function Admin() {
                 <Send size={16} /> Kirim {parsedItems.length} Baris ke Database sebagai Draf
               </button>
             )}
-            <div className="border-t border-white/10 pt-4">
-              <p className="mb-2 text-xs text-white/60">
-                <b>Tahap 6 — Uji Coba Cepat Pilot APBN Nasional:</b> Muat 12 pos APBN Nasional 2026 lengkap (Penerimaan, Belanja, Fungsi Kementerian, & Proyek Strategis) sebagai Draf:
-              </p>
-              <button type="button" onClick={handleLoadPilotAPBN} className="btn-s w-full justify-center border-lime/50 text-lime hover:bg-lime/10">
-                🚀 Impor Dataset Pilot APBN Nasional 2026 (1-Klik)
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -773,13 +739,13 @@ export default function Admin() {
         </div>
       )}
 
-      {/* TAHAP 6: EVALUASI PERFORMA PILOT APBN NASIONAL & UMPAN BALIK MASYARAKAT */}
-      {tab === 'Evaluasi Pilot APBN' && pilotStats && (
+      {/* TAHAP 6: EVALUASI PERFORMA SISTEM & UMPAN BALIK MASYARAKAT */}
+      {tab === 'Evaluasi & Performa Sistem' && pilotStats && (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Latensi Query PostgreSQL" value={pilotStats.db_latency_ms} hot />
             <Stat label="Lapis Pertahanan Siber" value={pilotStats.security_layers} hot />
-            <Stat label="Data Pilot Terpublikasi" value={`${pilotStats.published_budgets} Pos • ${pilotStats.published_projects} Proyek`} />
+            <Stat label="Data Terpublikasi" value={`${pilotStats.published_budgets} Pos • ${pilotStats.published_projects} Proyek`} />
             <Stat label="Skor Kepuasan Publik" value={`${pilotStats.average_rating} (${pilotStats.feedback_count} Ulasan)`} hot />
           </div>
 
