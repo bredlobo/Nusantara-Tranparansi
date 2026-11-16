@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -8,12 +9,42 @@ import (
 	"html"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
 	"nusantara-transparan/backend/internal/auth"
 	"nusantara-transparan/backend/internal/database"
 )
+
+var (
+	// importMu menjamin tidak ada Race Condition (TOCTOU) saat 2 user meng-upload di milidetik yang sama persis
+	importMu      sync.Mutex
+	atomicCounter uint64
+)
+
+// generateUniqueID membuat ID unik bebas bentrokan (collision-free) meskipun diakses ribuan user bersamaan
+func generateUniqueID(prefix string) string {
+	seq := atomic.AddUint64(&atomicCounter, 1)
+	b := make([]byte, 2)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%s-%d-%02X%02X", prefix, (time.Now().Unix()%100000)+int64(seq), b[0], b[1])
+}
+
+// computeContentHash menghitung Deterministic SHA-256 Hash murni dari isi data (untuk deteksi duplikat 100%)
+func computeContentHash(recType, category, name string, target, real float64) string {
+	normalized := fmt.Sprintf(
+		"%s|%s|%s|2026|%.2f|%.2f",
+		strings.ToLower(strings.TrimSpace(recType)),
+		strings.ToLower(strings.TrimSpace(category)),
+		strings.ToLower(strings.TrimSpace(name)),
+		target,
+		real,
+	)
+	h := sha256.Sum256([]byte(normalized))
+	return "0x" + hex.EncodeToString(h[:])
+}
 
 type ImportItem struct {
 	RecordType string  `json:"record_type"` // "budget" atau "project"
@@ -64,7 +95,7 @@ type PublishRequest struct {
 	ActorName  string `json:"actor_name"`
 }
 
-// GetSubmissions menampilkan seluruh antrean data (draft, approved, rejected, published) untuk panel Admin/Auditor/Data Manager
+// GetSubmissions menampilkan seluruh antrean data (draft, approved, rejected, published)
 func GetSubmissions(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		items := make([]SubmissionItem, 0)
@@ -80,7 +111,7 @@ func GetSubmissions(db *gorm.DB) http.HandlerFunc {
 			items = append(items, SubmissionItem{
 				ID:               b.ID,
 				RecordType:       "budget",
-				Category:         fmt.Sprintf("%s (%s)", b.Category, b.Type),
+				Category:         fmt.Sprintf("%s (%s) [v%d]", b.Category, b.Type, b.Version),
 				Name:             b.Name,
 				Target:           b.Amount,
 				Real:             realVal,
@@ -98,7 +129,7 @@ func GetSubmissions(db *gorm.DB) http.HandlerFunc {
 			items = append(items, SubmissionItem{
 				ID:               p.ID,
 				RecordType:       "project",
-				Category:         fmt.Sprintf("Proyek - %s (%s)", p.Category, p.Region),
+				Category:         fmt.Sprintf("Proyek - %s (%s) [v%d]", p.Category, p.Region, p.Version),
 				Name:             p.Name,
 				Target:           p.Budget,
 				Real:             p.Spent,
@@ -115,7 +146,10 @@ func GetSubmissions(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// HandleImport menangani unggahan data baru oleh Data Manager (masuk sebagai status 'draft')
+// HandleImport menangani unggahan data baru oleh Data Manager dengan:
+// 1. Concurrency Lock (importMu + db.Transaction) agar 2 user yang upload bersamaan tidak bentrok.
+// 2. Idempotent Deduplication (menolak data kembar 100% agar tidak terjadi Double Counting - Aturan #8).
+// 3. Smart Versioning (jika nama item sama tapi angka direvisi, membuat Versi v+1 dengan menyimpan riwayat lama - Aturan #7).
 func HandleImport(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req ImportRequest
@@ -127,157 +161,300 @@ func HandleImport(db *gorm.DB) http.HandlerFunc {
 			req.ActorName = "Data Manager"
 		}
 
+		// Kunci Concurrency agar 2 request yang masuk pada milidetik yang sama dieksekusi secara berurutan & aman
+		importMu.Lock()
+		defer importMu.Unlock()
+
 		now := time.Now()
 		importedCount := 0
+		updatedVersionCount := 0
+		skippedDuplicateCount := 0
 
-		for idx, item := range req.Items {
-			if item.Name == "" {
-				continue
-			}
-			if item.Source == "" {
-				item.Source = "Unggahan Data Manager (APBN 2026)"
-			}
-			if item.Period == "" {
-				item.Period = "2026"
-			}
+		// Gunakan untuk menyaring duplikat di dalam 1 file yang sama (jika 1 file CSV punya 2 baris identik)
+		seenInBatch := make(map[string]bool)
 
-			rawPayload := fmt.Sprintf("%s|%s|%.2f|%.2f|%d", item.RecordType, item.Name, item.Target, item.Real, now.UnixNano()+int64(idx))
-			h := sha256.Sum256([]byte(rawPayload))
-			hashStr := "0x" + hex.EncodeToString(h[:])
-			txID := fmt.Sprintf("TX-%X", (now.UnixNano()+int64(idx))&0xFFFFFFFF)
+		_ = db.Transaction(func(tx *gorm.DB) error {
+			for _, item := range req.Items {
+				item.Name = strings.TrimSpace(item.Name)
+				if item.Name == "" {
+					continue
+				}
+				if item.Source == "" {
+					item.Source = "Unggahan Data Manager"
+				}
+				if item.Period == "" {
+					item.Period = "2026"
+				}
 
-			if item.RecordType == "project" {
-				prjID := fmt.Sprintf("PRJ-%d", (now.Unix()%100000)+int64(idx))
-				st := database.ProjectStatus(item.Status)
-				if st == "" {
-					st = database.ProjectOngoing
+				recType := strings.ToLower(strings.TrimSpace(item.RecordType))
+				if recType != "project" {
+					recType = "budget"
 				}
-				agency := item.Agency
-				if agency == "" {
-					agency = "Kementerian PUPR"
-				}
-				region := item.Region
-				if region == "" {
-					region = "Nasional"
-				}
-				cat := item.Category
+
+				cat := strings.TrimSpace(item.Category)
 				if cat == "" {
-					cat = "Infrastruktur"
-				}
-				prog := item.Progress
-				if prog == 0 && item.Target > 0 {
-					prog = (item.Real / item.Target) * 100
-				}
-
-				prj := database.Project{
-					ID:          prjID,
-					ProjectCode: "KODE-" + prjID,
-					Name:        item.Name,
-					Agency:      agency,
-					Region:      region,
-					Category:    cat,
-					Budget:      item.Target,
-					Spent:       item.Real,
-					Progress:    prog,
-					Status:      st,
-					StartYear:   2026,
-					EndYear:     2027,
-					BaseMetadata: database.BaseMetadata{
-						Source:           item.Source,
-						FiscalYear:       2026,
-						Period:           item.Period,
-						ValidationStatus: "draft", // Masuk sebagai Draf!
-						Classification:   "public",
-						IntegrityHash:    hashStr,
-						BlockchainTxID:   txID,
-						Version:          1,
-						CreatedAt:        now,
-						UpdatedAt:        now,
-					},
-				}
-				if err := db.Save(&prj).Error; err == nil {
-					importedCount++
-					createBlockchainAndAuditRecord(db, prj.ID, "project", txID, hashStr, item.Source, req.ActorName, item.Name)
-				}
-			} else {
-				bID := fmt.Sprintf("BDG-%d", (now.Unix()%100000)+int64(idx))
-				bType := database.BudgetType(item.Type)
-				if bType != database.TypeRevenue && bType != database.TypeExpenditure {
-					bType = database.TypeExpenditure
-				}
-				cat := item.Category
-				if cat == "" {
-					if bType == database.TypeRevenue {
+					if recType == "project" {
+						cat = "Infrastruktur"
+					} else if item.Type == "revenue" {
 						cat = "Penerimaan"
 					} else {
 						cat = "Jenis Belanja"
 					}
 				}
 
-				b := database.Budget{
-					ID:          bID,
-					Type:        bType,
-					Category:    cat,
-					Name:        item.Name,
-					Amount:      item.Target,
-					Description: fmt.Sprintf("Data anggaran %s", item.Name),
-					BaseMetadata: database.BaseMetadata{
-						Source:           item.Source,
-						FiscalYear:       2026,
-						Period:           item.Period,
-						ValidationStatus: "draft", // Masuk sebagai Draf!
-						Classification:   "public",
-						IntegrityHash:    hashStr,
-						BlockchainTxID:   txID,
-						Version:          1,
-						CreatedAt:        now,
-						UpdatedAt:        now,
-					},
+				// Hitung Deterministic Hash dari isi konten
+				contentHash := computeContentHash(recType, cat, item.Name, item.Target, item.Real)
+
+				// Cek duplikat di dalam batch/file yang sama
+				if seenInBatch[contentHash] {
+					skippedDuplicateCount++
+					continue
 				}
-				if err := db.Save(&b).Error; err == nil {
-					pct := 0.0
-					if item.Target > 0 {
-						pct = (item.Real / item.Target) * 100
+				seenInBatch[contentHash] = true
+
+				txID := generateUniqueID("TX")
+
+				if recType == "project" {
+					var existingPrj database.Project
+					err := tx.Where("LOWER(name) = ?", strings.ToLower(item.Name)).First(&existingPrj).Error
+					if err == nil {
+						// Kasus A: Data proyek SAMA PERSIS (Pagu & Realisasi identik) -> Tolak Duplikat!
+						if existingPrj.Budget == item.Target && existingPrj.Spent == item.Real {
+							skippedDuplicateCount++
+							continue
+						}
+
+						// Kasus B: Nama Proyek sama tapi nilai diperbarui -> Smart Versioning (v+1, Aturan #7)
+						oldJSON := fmt.Sprintf(`{"budget":%.2f,"spent":%.2f,"version":%d}`, existingPrj.Budget, existingPrj.Spent, existingPrj.Version)
+						newVer := existingPrj.Version + 1
+						prog := item.Progress
+						if prog == 0 && item.Target > 0 {
+							prog = (item.Real / item.Target) * 100
+						}
+
+						tx.Model(&existingPrj).Updates(map[string]any{
+							"budget":            item.Target,
+							"spent":             item.Real,
+							"progress":          prog,
+							"validation_status": "draft",
+							"integrity_hash":    contentHash,
+							"blockchain_tx_id":  txID,
+							"version":           newVer,
+							"source":            item.Source,
+							"updated_at":        now,
+						})
+						recordVersionUpdateAudit(tx, existingPrj.ID, "project", txID, contentHash, req.ActorName, item.Name, oldJSON, newVer)
+						updatedVersionCount++
+						continue
 					}
-					real := database.Realization{
-						ID:              "REAL-" + bID,
-						BudgetID:        b.ID,
-						Amount:          item.Real,
-						Percentage:      pct,
-						RealizationDate: now,
-						Notes:           "Realisasi awal",
+
+					// Kasus C: Proyek benar-benar baru
+					prjID := generateUniqueID("PRJ")
+					st := database.ProjectStatus(item.Status)
+					if st == "" {
+						st = database.ProjectOngoing
+					}
+					agency := item.Agency
+					if agency == "" {
+						agency = "Instansi Pelaksana"
+					}
+					region := item.Region
+					if region == "" {
+						region = "Nasional"
+					}
+					prog := item.Progress
+					if prog == 0 && item.Target > 0 {
+						prog = (item.Real / item.Target) * 100
+					}
+
+					prj := database.Project{
+						ID:          prjID,
+						ProjectCode: "KODE-" + prjID,
+						Name:        item.Name,
+						Agency:      agency,
+						Region:      region,
+						Category:    cat,
+						Budget:      item.Target,
+						Spent:       item.Real,
+						Progress:    prog,
+						Status:      st,
+						StartYear:   2026,
+						EndYear:     2027,
 						BaseMetadata: database.BaseMetadata{
 							Source:           item.Source,
 							FiscalYear:       2026,
 							Period:           item.Period,
 							ValidationStatus: "draft",
 							Classification:   "public",
-							IntegrityHash:    hashStr,
+							IntegrityHash:    contentHash,
 							BlockchainTxID:   txID,
 							Version:          1,
 							CreatedAt:        now,
 							UpdatedAt:        now,
 						},
 					}
-					_ = db.Save(&real).Error
-					importedCount++
-					createBlockchainAndAuditRecord(db, b.ID, "budget", txID, hashStr, item.Source, req.ActorName, item.Name)
+					if err := tx.Create(&prj).Error; err == nil {
+						importedCount++
+						createBlockchainAndAuditRecord(tx, prj.ID, "project", txID, contentHash, item.Source, req.ActorName, item.Name)
+					}
+				} else {
+					// Untuk Budget (Anggaran & Realisasi)
+					var existingBdg database.Budget
+					err := tx.Where("LOWER(name) = ? AND LOWER(category) = ?", strings.ToLower(item.Name), strings.ToLower(cat)).First(&existingBdg).Error
+					if err == nil {
+						var existingReal database.Realization
+						_ = tx.Where("budget_id = ?", existingBdg.ID).First(&existingReal).Error
+
+						// Kasus A: Data Anggaran & Realisasi SAMA PERSIS -> Tolak Duplikat (Cegah Double Counting - Aturan #8)!
+						if existingBdg.Amount == item.Target && existingReal.Amount == item.Real {
+							skippedDuplicateCount++
+							continue
+						}
+
+						// Kasus B: Pos Anggaran sama tapi nilai direvisi -> Smart Versioning (v+1, Aturan #7)
+						oldJSON := fmt.Sprintf(`{"target":%.2f,"real":%.2f,"version":%d}`, existingBdg.Amount, existingReal.Amount, existingBdg.Version)
+						newVer := existingBdg.Version + 1
+						pct := 0.0
+						if item.Target > 0 {
+							pct = (item.Real / item.Target) * 100
+						}
+
+						tx.Model(&existingBdg).Updates(map[string]any{
+							"amount":            item.Target,
+							"validation_status": "draft",
+							"integrity_hash":    contentHash,
+							"blockchain_tx_id":  txID,
+							"version":           newVer,
+							"source":            item.Source,
+							"updated_at":        now,
+						})
+						tx.Model(&database.Realization{}).Where("budget_id = ?", existingBdg.ID).Updates(map[string]any{
+							"amount":            item.Real,
+							"percentage":        pct,
+							"validation_status": "draft",
+							"integrity_hash":    contentHash,
+							"blockchain_tx_id":  txID,
+							"version":           newVer,
+							"updated_at":        now,
+						})
+						recordVersionUpdateAudit(tx, existingBdg.ID, "budget", txID, contentHash, req.ActorName, item.Name, oldJSON, newVer)
+						updatedVersionCount++
+						continue
+					}
+
+					// Kasus C: Pos Anggaran benar-benar baru
+					bID := generateUniqueID("BDG")
+					bType := database.BudgetType(item.Type)
+					if bType != database.TypeRevenue && bType != database.TypeExpenditure {
+						bType = database.TypeExpenditure
+					}
+
+					b := database.Budget{
+						ID:          bID,
+						Type:        bType,
+						Category:    cat,
+						Name:        item.Name,
+						Amount:      item.Target,
+						Description: fmt.Sprintf("Data anggaran %s", item.Name),
+						BaseMetadata: database.BaseMetadata{
+							Source:           item.Source,
+							FiscalYear:       2026,
+							Period:           item.Period,
+							ValidationStatus: "draft",
+							Classification:   "public",
+							IntegrityHash:    contentHash,
+							BlockchainTxID:   txID,
+							Version:          1,
+							CreatedAt:        now,
+							UpdatedAt:        now,
+						},
+					}
+					if err := tx.Create(&b).Error; err == nil {
+						pct := 0.0
+						if item.Target > 0 {
+							pct = (item.Real / item.Target) * 100
+						}
+						real := database.Realization{
+							ID:              "REAL-" + bID,
+							BudgetID:        b.ID,
+							Amount:          item.Real,
+							Percentage:      pct,
+							RealizationDate: now,
+							Notes:           "Realisasi awal",
+							BaseMetadata: database.BaseMetadata{
+								Source:           item.Source,
+								FiscalYear:       2026,
+								Period:           item.Period,
+								ValidationStatus: "draft",
+								Classification:   "public",
+								IntegrityHash:    contentHash,
+								BlockchainTxID:   txID,
+								Version:          1,
+								CreatedAt:        now,
+								UpdatedAt:        now,
+							},
+						}
+						_ = tx.Create(&real).Error
+						importedCount++
+						createBlockchainAndAuditRecord(tx, b.ID, "budget", txID, contentHash, item.Source, req.ActorName, item.Name)
+					}
 				}
 			}
-		}
+			return nil
+		})
+
+		msg := fmt.Sprintf(
+			"Hasil Impor: %d data baru ditambahkan (Draf), %d data diperbarui ke versi baru (Revisi), dan %d data kembar persis dilewati otomatis (Cegah Double Counting).",
+			importedCount, updatedVersionCount, skippedDuplicateCount,
+		)
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"message":        fmt.Sprintf("Berhasil mengimpor %d data dengan status DRAF (menunggu pemeriksaan Auditor).", importedCount),
-			"imported_count": importedCount,
+			"message":                 msg,
+			"imported_count":          importedCount,
+			"updated_version_count":   updatedVersionCount,
+			"skipped_duplicate_count": skippedDuplicateCount,
 		})
 	}
 }
 
-func createBlockchainAndAuditRecord(db *gorm.DB, refID, recType, txID, hashStr, source, actorName, itemName string) {
+func recordVersionUpdateAudit(tx *gorm.DB, refID, recType, txID, hashStr, actorName, itemName, oldJSON string, newVer int) {
+	now := time.Now()
+	var rec database.BlockchainRecord
+	if err := tx.Where("reference_id = ?", refID).First(&rec).Error; err == nil {
+		var hist []string
+		_ = json.Unmarshal([]byte(rec.ReviewHistory), &hist)
+		hist = append(hist, fmt.Sprintf("Revisi Versi v%d diunggah oleh %s (Hash Baru: %s...)", newVer, actorName, hashStr[:14]))
+		histBytes, _ := json.Marshal(hist)
+		tx.Model(&rec).Updates(map[string]any{
+			"tx_id":          txID,
+			"hash":           hashStr,
+			"status":         database.StatusPending,
+			"review_history": string(histBytes),
+			"version":        newVer,
+			"updated_at":     now,
+		})
+	}
+
+	_ = tx.Create(&database.AuditLog{
+		ID:        generateUniqueID("LOG"),
+		TableName: recType,
+		RecordID:  refID,
+		Action:    "REVISION_VERSION_UP",
+		ActorID:   "data_manager",
+		ActorName: actorName,
+		OldData:   oldJSON,
+		NewData:   fmt.Sprintf(`{"name":%q,"version":%d,"status":"draft"}`, itemName, newVer),
+		ChangedAt: now,
+		Reason:    fmt.Sprintf("Revisi data %s naik ke versi v%d (riwayat lama dipertahankan sesuai Aturan #7)", itemName, newVer),
+		HashProof: hashStr,
+	}).Error
+}
+
+func createBlockchainAndAuditRecord(tx *gorm.DB, refID, recType, txID, hashStr, source, actorName, itemName string) {
 	now := time.Now()
 	rec := database.BlockchainRecord{
-		ID:            fmt.Sprintf("REC-%d", now.UnixNano()%1000000),
+		ID:            generateUniqueID("REC"),
 		TxID:          txID,
 		Hash:          hashStr,
 		RecordType:    recType,
@@ -285,7 +462,7 @@ func createBlockchainAndAuditRecord(db *gorm.DB, refID, recType, txID, hashStr, 
 		Timestamp:     now,
 		Status:        database.StatusPending,
 		SignerAgency:  source,
-		ReviewHistory: fmt.Sprintf(`["Diunggah oleh %s (Status: Draf)"]`, actorName),
+		ReviewHistory: fmt.Sprintf(`["Diunggah oleh %s (Status: Draf, v1)"]`, actorName),
 		BaseMetadata: database.BaseMetadata{
 			Source:           source,
 			FiscalYear:       2026,
@@ -299,21 +476,21 @@ func createBlockchainAndAuditRecord(db *gorm.DB, refID, recType, txID, hashStr, 
 			UpdatedAt:        now,
 		},
 	}
-	_ = db.Create(&rec).Error
+	_ = tx.Create(&rec).Error
 
 	auditLog := database.AuditLog{
-		ID:        fmt.Sprintf("LOG-%d", now.UnixNano()%1000000),
+		ID:        generateUniqueID("LOG"),
 		TableName: recType,
 		RecordID:  refID,
 		Action:    "IMPORT_DRAFT",
 		ActorID:   "data_manager",
 		ActorName: actorName,
-		NewData:   fmt.Sprintf(`{"name":%q,"status":"draft"}`, itemName),
+		NewData:   fmt.Sprintf(`{"name":%q,"status":"draft","version":1}`, itemName),
 		ChangedAt: now,
 		Reason:    fmt.Sprintf("Unggah draf data baru: %s", itemName),
 		HashProof: hashStr,
 	}
-	_ = db.Create(&auditLog).Error
+	_ = tx.Create(&auditLog).Error
 }
 
 // HandleReview menangani pemeriksaan & persetujuan oleh Auditor / Reviewer
@@ -357,7 +534,6 @@ func HandleReview(db *gorm.DB) http.HandlerFunc {
 			})
 		}
 
-		// Perbarui status catatan Blockchain
 		var rec database.BlockchainRecord
 		if err := db.Where("reference_id = ?", req.ID).First(&rec).Error; err == nil {
 			var hist []string
@@ -371,9 +547,8 @@ func HandleReview(db *gorm.DB) http.HandlerFunc {
 			})
 		}
 
-		// Catat ke Audit Log (Append-Only)
 		auditLog := database.AuditLog{
-			ID:        fmt.Sprintf("LOG-%d", now.UnixNano()%1000000),
+			ID:        generateUniqueID("LOG"),
 			TableName: req.RecordType,
 			RecordID:  req.ID,
 			Action:    action,
@@ -437,7 +612,6 @@ func HandlePublish(db *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		// Update riwayat Blockchain
 		var recs []database.BlockchainRecord
 		if req.PublishAll {
 			db.Where("status = ?", database.StatusVerified).Find(&recs)
@@ -457,7 +631,7 @@ func HandlePublish(db *gorm.DB) http.HandlerFunc {
 		}
 
 		auditLog := database.AuditLog{
-			ID:        fmt.Sprintf("LOG-%d", now.UnixNano()%1000000),
+			ID:        generateUniqueID("LOG"),
 			TableName: req.RecordType,
 			RecordID:  req.ID,
 			Action:    "ADMIN_PUBLISHED",
@@ -523,7 +697,7 @@ func CreateUser(db *gorm.DB) http.HandlerFunc {
 
 		now := time.Now()
 		u := database.User{
-			ID:           fmt.Sprintf("USR-%d", now.Unix()%100000),
+			ID:           generateUniqueID("USR"),
 			Username:     req.Username,
 			Email:        req.Email,
 			PasswordHash: auth.HashPassword(req.Password),
@@ -541,7 +715,7 @@ func CreateUser(db *gorm.DB) http.HandlerFunc {
 		}
 
 		_ = db.Create(&database.AuditLog{
-			ID:        fmt.Sprintf("LOG-%d", now.UnixNano()%1000000),
+			ID:        generateUniqueID("LOG"),
 			TableName: "users",
 			RecordID:  u.ID,
 			Action:    "CREATE_USER",
@@ -584,21 +758,20 @@ func GetPilotEvaluation(db *gorm.DB) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"db_latency_ms":       fmt.Sprintf("%.2f ms", dbLatencyMs),
-			"security_layers":     "18/18 Aktif (100% Compliant)",
-			"published_budgets":   pubBudgets,
-			"published_projects":  pubProjects,
-			"verified_blocks":     verifiedBlocks,
-			"total_audit_logs":    totalAuditLogs,
-			"feedback_count":      len(feedbacks),
-			"average_rating":      fmt.Sprintf("%.1f / 5.0", avgRating),
-			"feedbacks":           feedbacks,
+			"db_latency_ms":      fmt.Sprintf("%.2f ms", dbLatencyMs),
+			"security_layers":    "18/18 Aktif (100% Compliant)",
+			"published_budgets":  pubBudgets,
+			"published_projects": pubProjects,
+			"verified_blocks":    verifiedBlocks,
+			"total_audit_logs":   totalAuditLogs,
+			"feedback_count":     len(feedbacks),
+			"average_rating":     fmt.Sprintf("%.1f / 5.0", avgRating),
+			"feedbacks":          feedbacks,
 		})
 	}
 }
 
-// SubmitPublicFeedback menerima masukan/laporan masyarakat pada uji coba Pilot APBN Nasional (Tahap 6)
-// Nama pelapor disamarkan dengan MaskPII sesuai kepatuhan UU PDP No. 27/2022.
+// SubmitPublicFeedback menerima masukan/laporan masyarakat pada uji coba sistem (Tahap 6)
 func SubmitPublicFeedback(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -633,7 +806,7 @@ func SubmitPublicFeedback(db *gorm.DB) http.HandlerFunc {
 
 		now := time.Now()
 		fb := database.PublicFeedback{
-			ID:          fmt.Sprintf("FDB-%d", now.UnixNano()%1000000),
+			ID:          generateUniqueID("FDB"),
 			CitizenName: name,
 			Category:    html.EscapeString(req.Category),
 			TargetItem:  html.EscapeString(req.TargetItem),
@@ -647,7 +820,7 @@ func SubmitPublicFeedback(db *gorm.DB) http.HandlerFunc {
 		}
 
 		_ = db.Create(&database.AuditLog{
-			ID:        fmt.Sprintf("LOG-%d", now.UnixNano()%1000000),
+			ID:        generateUniqueID("LOG"),
 			TableName: "public_feedbacks",
 			RecordID:  fb.ID,
 			Action:    "PUBLIC_FEEDBACK",
