@@ -1,5 +1,20 @@
 import { useState, useEffect, ChangeEvent, FormEvent } from 'react'
-import { UploadCloud, ShieldAlert, CheckCircle2, XCircle, Send, Globe, UserPlus, RefreshCw, PlusCircle, KeyRound, Lock } from 'lucide-react'
+import {
+  UploadCloud,
+  ShieldAlert,
+  CheckCircle2,
+  XCircle,
+  Send,
+  Globe,
+  UserPlus,
+  RefreshCw,
+  PlusCircle,
+  KeyRound,
+  Lock,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+} from 'lucide-react'
 import { Head, Table, Pill, fmt } from '../components/ui'
 import { api } from '../services/api'
 import type { SubmissionItem, AuditLogItem, UserItem } from '../types'
@@ -9,7 +24,7 @@ type Role = 'Data Manager' | 'Auditor / Reviewer' | 'Administrator'
 interface AuthSession {
   username: string
   full_name: string
-  role: string // 'data_manager' | 'auditor' | 'admin'
+  role: string
   ui_role: Role
   agency: string
   token: string
@@ -20,6 +35,7 @@ export default function Admin() {
   const [session, setSession] = useState<AuthSession | null>(null)
   const [loginUser, setLoginUser] = useState('')
   const [loginPass, setLoginPass] = useState('')
+  const [showLoginPass, setShowLoginPass] = useState(false)
   const [loginError, setLoginError] = useState('')
 
   const [tab, setTab] = useState('')
@@ -42,12 +58,24 @@ export default function Admin() {
   const [parsedItems, setParsedItems] = useState<any[]>([])
   const [fileName, setFileName] = useState('')
 
-  // State khusus Administrator (Tambah Pengguna)
+  // State khusus Administrator (Tambah Pengguna + Validasi Password Kuat)
   const [uUsername, setUUsername] = useState('')
+  const [uPassword, setUPassword] = useState('')
+  const [showNewUserPass, setShowNewUserPass] = useState(false)
   const [uEmail, setUEmail] = useState('')
   const [uFullName, setUFullName] = useState('')
   const [uRole, setURole] = useState('data_manager')
   const [uAgency, setUAgency] = useState('')
+
+  // Evaluasi kekuatan password secara real-time (Minimal 10 karakter, Huruf Besar, Huruf Kecil, Angka, Simbol)
+  const passRules = [
+    { label: 'Minimal 10 karakter', ok: uPassword.length >= 10 },
+    { label: 'Huruf besar (A-Z)', ok: /[A-Z]/.test(uPassword) },
+    { label: 'Huruf kecil (a-z)', ok: /[a-z]/.test(uPassword) },
+    { label: 'Angka (0-9)', ok: /[0-9]/.test(uPassword) },
+    { label: 'Simbol (!@#$%^&* dll.)', ok: /[^A-Za-z0-9\s]/.test(uPassword) },
+  ]
+  const isNewUserPassStrong = passRules.every(r => r.ok)
 
   async function refreshAll() {
     setLoading(true)
@@ -114,8 +142,8 @@ export default function Admin() {
     return (
       <>
         <Head
-          title="Autentikasi Staf & Otorisasi Berjenjang (RBAC + MFA)"
-          sub="Masuk menggunakan akun staf yang terdaftar di tabel users PostgreSQL."
+          title="Autentikasi Staf & Otorisasi Berjenjang (RBAC + Anti-Brute Force)"
+          sub="Dilengkapi kebijakan password ketat (Min. 10 karakter, Huruf Besar, Kecil, Angka, Simbol) dan penguncian otomatis jika 5x salah password."
         />
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -126,7 +154,7 @@ export default function Admin() {
             </h3>
             {loginError && (
               <div className="rounded border border-red-500/40 bg-red-500/10 p-2.5 text-xs text-red-300">
-                ❌ {loginError}
+                ⚠️ {loginError}
               </div>
             )}
             <div>
@@ -141,18 +169,36 @@ export default function Admin() {
             </div>
             <div>
               <label className="text-xs text-white/60">Password</label>
-              <input
-                className="inp mt-1 w-full"
-                type="password"
-                required
-                value={loginPass}
-                onChange={e => setLoginPass(e.target.value)}
-                placeholder="••••••••"
-              />
+              <div className="relative mt-1">
+                <input
+                  className="inp w-full pr-10"
+                  type={showLoginPass ? 'text' : 'password'}
+                  required
+                  value={loginPass}
+                  onChange={e => setLoginPass(e.target.value)}
+                  placeholder="Minimal 10 karakter (Huruf, Angka, Simbol)"
+                />
+                <button
+                  type="button"
+                  aria-label={showLoginPass ? 'Sembunyikan password' : 'Tampilkan password'}
+                  onClick={() => setShowLoginPass(!showLoginPass)}
+                  className="absolute right-3 top-2.5 text-white/50 hover:text-lime"
+                >
+                  {showLoginPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             <button type="submit" className="btn-p w-full justify-center">
               <KeyRound size={16} /> Masuk dengan Kredensial Database
             </button>
+            <div className="rounded border border-white/10 bg-white/[0.02] p-2.5 text-[11px] text-white/60">
+              <p className="flex items-center gap-1 font-bold text-lime">
+                <ShieldCheck size={14} /> Proteksi Anti-Brute Force Aktif:
+              </p>
+              <p className="mt-0.5">
+                Maksimal <b>5x percobaan gagal</b> berturut-turut. Percobaan ke-5 yang gagal akan mengunci akun selama <b>5 menit</b> dan mencatat IP ke Audit Log.
+              </p>
+            </div>
           </form>
 
           {/* 3 Kartu Akses Cepat (1-Klik Login Sesuai Role) */}
@@ -160,20 +206,20 @@ export default function Admin() {
             <div className="card">
               <h3 className="text-sm font-bold text-lime">Akses Cepat Staf Resmi (1-Klik Login Otomatis ke PostgreSQL)</h3>
               <p className="mt-1 text-xs text-white/60">
-                Klik salah satu kartu peran di bawah ini untuk langsung login menggunakan akun resmi di PostgreSQL dan menguji pemisahan layar kerja (Four-Eyes Principle):
+                Seluruh akun staf di bawah ini telah menggunakan standar password tinggi (Huruf Besar, Kecil, Angka, & Simbol &ge; 10 karakter):
               </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border border-white/15 bg-white/[0.02] p-3.5 flex flex-col justify-between">
                   <div>
                     <span className="rounded bg-blue/30 px-2 py-0.5 text-[10px] font-bold text-lime">TAHAP 1 — INPUT</span>
                     <h4 className="mt-2 font-bold">1. Data Manager</h4>
-                    <p className="mt-1 font-mono text-xs text-white/50">User: datamanager</p>
-                    <p className="font-mono text-xs text-white/50">Pass: manager123</p>
+                    <p className="mt-1 font-mono text-xs text-white/60">User: datamanager</p>
+                    <p className="font-mono text-xs text-lime">Pass: Manager#2026!</p>
                   </div>
                   <button
                     type="button"
                     className="btn-p mt-4 w-full justify-center text-xs"
-                    onClick={() => performLogin('datamanager', 'manager123')}
+                    onClick={() => performLogin('datamanager', 'Manager#2026!')}
                   >
                     Login Data Manager
                   </button>
@@ -183,13 +229,13 @@ export default function Admin() {
                   <div>
                     <span className="rounded bg-blue/30 px-2 py-0.5 text-[10px] font-bold text-lime">TAHAP 2 — AUDIT</span>
                     <h4 className="mt-2 font-bold">2. Auditor BPK</h4>
-                    <p className="mt-1 font-mono text-xs text-white/50">User: auditor</p>
-                    <p className="font-mono text-xs text-white/50">Pass: auditor123</p>
+                    <p className="mt-1 font-mono text-xs text-white/60">User: auditor</p>
+                    <p className="font-mono text-xs text-lime">Pass: Auditor#2026!</p>
                   </div>
                   <button
                     type="button"
                     className="btn-p mt-4 w-full justify-center text-xs"
-                    onClick={() => performLogin('auditor', 'auditor123')}
+                    onClick={() => performLogin('auditor', 'Auditor#2026!')}
                   >
                     Login Auditor
                   </button>
@@ -199,13 +245,13 @@ export default function Admin() {
                   <div>
                     <span className="rounded bg-blue/30 px-2 py-0.5 text-[10px] font-bold text-lime">TAHAP 3 — PUBLISH</span>
                     <h4 className="mt-2 font-bold">3. Administrator</h4>
-                    <p className="mt-1 font-mono text-xs text-white/50">User: admin</p>
-                    <p className="font-mono text-xs text-white/50">Pass: admin123</p>
+                    <p className="mt-1 font-mono text-xs text-white/60">User: admin</p>
+                    <p className="font-mono text-xs text-lime">Pass: Admin#2026!</p>
                   </div>
                   <button
                     type="button"
                     className="btn-p mt-4 w-full justify-center text-xs"
-                    onClick={() => performLogin('admin', 'admin123')}
+                    onClick={() => performLogin('admin', 'Admin#2026!')}
                   >
                     Login Administrator
                   </button>
@@ -344,11 +390,12 @@ export default function Admin() {
 
   async function handleCreateUser(e: FormEvent) {
     e.preventDefault()
-    if (!uUsername || !uFullName || !session) return
+    if (!uUsername || !uFullName || !isNewUserPassStrong || !session) return
     try {
       await api.createUser(
         {
           username: uUsername,
+          password: uPassword,
           email: uEmail || `${uUsername}@transparan.go.id`,
           full_name: uFullName,
           role: uRole,
@@ -356,8 +403,9 @@ export default function Admin() {
         },
         session.role,
       )
-      setStatusMsg(`✅ Pengguna ${uFullName} berhasil ditambahkan ke PostgreSQL!`)
+      setStatusMsg(`✅ Pengguna ${uFullName} berhasil ditambahkan ke PostgreSQL dengan password terenkripsi!`)
       setUUsername('')
+      setUPassword('')
       setUEmail('')
       setUFullName('')
       setUAgency('')
@@ -621,6 +669,35 @@ export default function Admin() {
               <input className="inp mt-1 w-full" required value={uUsername} onChange={e => setUUsername(e.target.value)} placeholder="Contoh: rina_auditor" />
             </div>
             <div>
+              <label className="text-xs text-white/60">Password Staf Baru</label>
+              <div className="relative mt-1">
+                <input
+                  className="inp w-full pr-10"
+                  type={showNewUserPass ? 'text' : 'password'}
+                  required
+                  value={uPassword}
+                  onChange={e => setUPassword(e.target.value)}
+                  placeholder="Contoh: Rina#2026!Bpk"
+                />
+                <button
+                  type="button"
+                  aria-label={showNewUserPass ? 'Sembunyikan password' : 'Tampilkan password'}
+                  onClick={() => setShowNewUserPass(!showNewUserPass)}
+                  className="absolute right-3 top-2.5 text-white/50 hover:text-lime"
+                >
+                  {showNewUserPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              <div className="mt-2 space-y-1 rounded border border-white/10 bg-white/[0.02] p-2.5 text-[11px]">
+                <p className="font-semibold text-white/70">Syarat Keamanan Password:</p>
+                {passRules.map(r => (
+                  <p key={r.label} className={r.ok ? 'text-lime' : 'text-white/40'}>
+                    {r.ok ? '✓' : '○'} {r.label}
+                  </p>
+                ))}
+              </div>
+            </div>
+            <div>
               <label className="text-xs text-white/60">Nama Lengkap</label>
               <input className="inp mt-1 w-full" required value={uFullName} onChange={e => setUFullName(e.target.value)} placeholder="Contoh: Rina Wijaya" />
             </div>
@@ -640,7 +717,11 @@ export default function Admin() {
               <label className="text-xs text-white/60">Instansi</label>
               <input className="inp mt-1 w-full" value={uAgency} onChange={e => setUAgency(e.target.value)} placeholder="Contoh: BPK RI / Kemenkeu" />
             </div>
-            <button type="submit" className="btn-p w-full justify-center">
+            <button
+              type="submit"
+              disabled={!isNewUserPassStrong}
+              className="btn-p w-full justify-center disabled:opacity-40"
+            >
               Simpan Pengguna ke PostgreSQL
             </button>
           </form>

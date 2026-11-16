@@ -105,13 +105,14 @@ export const api = {
     return await r.json()
   },
 
-  async createUser(payload: { username: string; email: string; full_name: string; role: string; agency: string }, userRole = 'admin') {
+  async createUser(payload: { username: string; password: string; email: string; full_name: string; role: string; agency: string }, userRole = 'admin') {
     const r = await fetch(BASE + '/admin/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-User-Role': userRole },
       body: JSON.stringify(payload),
     })
-    if (!r.ok) throw new Error('Gagal menambahkan pengguna (RBAC)')
-    return await r.json()
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.error || 'Gagal menambahkan pengguna (RBAC)')
+    return data
   },
 }

@@ -71,3 +71,49 @@ func TestPIIMaskingCompliance(t *testing.T) {
 		t.Fatalf("Masking PII tidak sesuai: %s", masked)
 	}
 }
+
+func TestPasswordPolicyValidation(t *testing.T) {
+	// Password lemah harus ditolak
+	if err := ValidatePasswordStrength("pendek1!"); err == nil {
+		t.Fatalf("Seharusnya menolak password < 10 karakter")
+	}
+	if err := ValidatePasswordStrength("tanpahurufbesar123!"); err == nil {
+		t.Fatalf("Seharusnya menolak password tanpa huruf besar")
+	}
+	if err := ValidatePasswordStrength("TanpaSimbol12345"); err == nil {
+		t.Fatalf("Seharusnya menolak password tanpa simbol")
+	}
+
+	// Password kuat harus diterima
+	if err := ValidatePasswordStrength("Manager#2026!"); err != nil {
+		t.Fatalf("Seharusnya menerima password kuat, error: %v", err)
+	}
+}
+
+func TestLoginBruteForceLockout(t *testing.T) {
+	testKey := "127.0.0.1|test_brute_user"
+	resetLoginAttempts(testKey)
+
+	for i := 1; i <= 4; i++ {
+		rem, locked := recordFailedLogin(testKey)
+		if locked {
+			t.Fatalf("Seharusnya belum terkunci pada percobaan ke-%d", i)
+		}
+		if rem != 5-i {
+			t.Fatalf("Sisa percobaan tidak sesuai: dapat %d, ingin %d", rem, 5-i)
+		}
+	}
+
+	// Percobaan ke-5 harus memicu Lockout
+	_, locked := recordFailedLogin(testKey)
+	if !locked {
+		t.Fatalf("Seharusnya terkunci pada percobaan ke-5")
+	}
+
+	isLocked, _ := checkLoginLockout(testKey)
+	if !isLocked {
+		t.Fatalf("checkLoginLockout seharusnya mengembalikan true")
+	}
+
+	resetLoginAttempts(testKey)
+}

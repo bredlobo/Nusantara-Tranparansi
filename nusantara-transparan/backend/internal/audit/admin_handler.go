@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"nusantara-transparan/backend/internal/auth"
 	"nusantara-transparan/backend/internal/database"
 )
 
@@ -493,18 +494,28 @@ func GetUsers(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// CreateUser menambahkan pengguna baru oleh Administrator ke tabel users di PostgreSQL
+// CreateUser menambahkan pengguna baru oleh Administrator ke tabel users di PostgreSQL dengan validasi kekuatan password
 func CreateUser(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Username string            `json:"username"`
+			Password string            `json:"password"`
 			Email    string            `json:"email"`
 			FullName string            `json:"full_name"`
 			Role     database.UserRole `json:"role"`
 			Agency   string            `json:"agency"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" {
-			http.Error(w, "Data pengguna tidak lengkap", http.StatusBadRequest)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Data pengguna tidak lengkap."})
+			return
+		}
+
+		if err := auth.ValidatePasswordStrength(req.Password); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Password tidak memenuhi syarat keamanan: " + err.Error()})
 			return
 		}
 
@@ -513,7 +524,7 @@ func CreateUser(db *gorm.DB) http.HandlerFunc {
 			ID:           fmt.Sprintf("USR-%d", now.Unix()%100000),
 			Username:     req.Username,
 			Email:        req.Email,
-			PasswordHash: "$2a$10$encryptedHashPlaceholder",
+			PasswordHash: auth.HashPassword(req.Password),
 			FullName:     req.FullName,
 			Role:         req.Role,
 			Agency:       req.Agency,
@@ -521,7 +532,9 @@ func CreateUser(db *gorm.DB) http.HandlerFunc {
 			UpdatedAt:    now,
 		}
 		if err := db.Create(&u).Error; err != nil {
-			http.Error(w, "Gagal membuat pengguna: "+err.Error(), http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Gagal membuat pengguna: " + err.Error()})
 			return
 		}
 
