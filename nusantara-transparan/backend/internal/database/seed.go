@@ -10,6 +10,29 @@ import (
 	"gorm.io/gorm"
 )
 
+// CleanAllData mengosongkan seluruh isi tabel di PostgreSQL agar database murni bersih (0 baris)
+func CleanAllData(db *gorm.DB) error {
+	log.Println("🧹 Mengosongkan seluruh data tabel di PostgreSQL...")
+	tables := []string{
+		"realizations",
+		"transactions",
+		"budgets",
+		"ministries",
+		"projects",
+		"blockchain_records",
+		"anomaly_findings",
+		"audit_logs",
+		"users",
+	}
+	for _, t := range tables {
+		if err := db.Exec(fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE", t)).Error; err != nil {
+			return fmt.Errorf("gagal mengosongkan tabel %s: %w", t, err)
+		}
+	}
+	log.Println("✅ Seluruh tabel di PostgreSQL sekarang 100% bersih dan kosong (0 baris)!")
+	return nil
+}
+
 // SeedInitialData mengisi dataset awal (APBN demo) yang sinkron dengan frontend
 func SeedInitialData(db *gorm.DB) error {
 	log.Println("🌱 Memeriksa dan mengisi seed data awal...")

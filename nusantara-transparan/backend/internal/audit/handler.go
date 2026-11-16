@@ -33,7 +33,7 @@ type ChatReply struct {
 	Sources []string `json:"sources"`
 }
 
-// GetAnomalies menyajikan temuan pola anomali dari PostgreSQL (Aturan 4: AI Read-Only)
+// GetAnomalies menyajikan temuan pola anomali murni dari PostgreSQL (Aturan 4: AI Read-Only)
 func GetAnomalies(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var findings []database.AnomalyFinding
@@ -63,8 +63,7 @@ func GetAnomalies(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// HandleAIChat menjawab pertanyaan masyarakat berdasarkan data resmi di PostgreSQL secara Read-Only (Aturan 4)
-// Dilengkapi sanitasi input (Mitigasi CWE-20 & CWE-79 XSS)
+// HandleAIChat menjawab pertanyaan masyarakat murni berdasarkan data di PostgreSQL secara Read-Only (Aturan 4)
 func HandleAIChat(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req ChatRequest
@@ -73,7 +72,6 @@ func HandleAIChat(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		// Validasi & Sanitasi Input (CWE Top 25)
 		cleanQuestion := html.EscapeString(strings.TrimSpace(req.Question))
 		if len(cleanQuestion) == 0 || len(cleanQuestion) > 500 {
 			http.Error(w, "Panjang pertanyaan harus antara 1 hingga 500 karakter", http.StatusBadRequest)
@@ -81,13 +79,12 @@ func HandleAIChat(db *gorm.DB) http.HandlerFunc {
 		}
 
 		q := strings.ToLower(cleanQuestion)
-		sources := []string{"Database PostgreSQL Nusantara Transparan — Kemenkeu RI (APBN 2026)"}
+		sources := []string{}
 		var answer string
 
 		switch {
 		case strings.Contains(q, "apbn"):
 			answer = "APBN adalah rencana keuangan tahunan pemerintahan negara Indonesia yang disetujui oleh DPR, mencakup penerimaan negara, belanja negara, dan pembiayaan."
-			sources = []string{}
 
 		case strings.Contains(q, "pendidikan"):
 			var b database.Budget
@@ -95,7 +92,9 @@ func HandleAIChat(db *gorm.DB) http.HandlerFunc {
 			if err := db.Where("name = ? AND classification = ?", "Pendidikan", "public").First(&b).Error; err == nil {
 				_ = db.Where("budget_id = ?", b.ID).First(&real).Error
 				answer = fmt.Sprintf("Berdasarkan data database PostgreSQL, realisasi anggaran fungsi Pendidikan mencapai Rp %.0f Triliun dari total pagu Rp %.0f Triliun (%.1f%%).", real.Amount, b.Amount, real.Percentage)
-				sources = []string{b.Source, real.Source}
+				sources = []string{b.Source}
+			} else {
+				answer = "Saat ini belum ada data anggaran fungsi Pendidikan di dalam database PostgreSQL."
 			}
 
 		case strings.Contains(q, "kesehatan"):
@@ -104,7 +103,9 @@ func HandleAIChat(db *gorm.DB) http.HandlerFunc {
 			if err := db.Where("name = ? AND classification = ?", "Kesehatan", "public").First(&b).Error; err == nil {
 				_ = db.Where("budget_id = ?", b.ID).First(&real).Error
 				answer = fmt.Sprintf("Berdasarkan data database PostgreSQL, realisasi anggaran fungsi Kesehatan mencapai Rp %.0f Triliun dari total pagu Rp %.0f Triliun (%.1f%%).", real.Amount, b.Amount, real.Percentage)
-				sources = []string{b.Source, real.Source}
+				sources = []string{b.Source}
+			} else {
+				answer = "Saat ini belum ada data anggaran fungsi Kesehatan di dalam database PostgreSQL."
 			}
 
 		case strings.Contains(q, "pajak"):
@@ -114,32 +115,54 @@ func HandleAIChat(db *gorm.DB) http.HandlerFunc {
 				_ = db.Where("budget_id = ?", b.ID).First(&real).Error
 				answer = fmt.Sprintf("Realisasi penerimaan Pajak tercatat sebesar Rp %.0f Triliun dari target Rp %.0f Triliun (%.1f%%).", real.Amount, b.Amount, real.Percentage)
 				sources = []string{b.Source}
+			} else {
+				answer = "Saat ini belum ada data penerimaan Pajak di dalam database PostgreSQL."
 			}
 
 		case strings.Contains(q, "belanja"):
 			var budgets []database.Budget
 			db.Where("type = ? AND category = ? AND classification = ?", database.TypeExpenditure, "Jenis Belanja", "public").Find(&budgets)
-			var totalTarget, totalReal float64
-			for _, b := range budgets {
-				totalTarget += b.Amount
-				var real database.Realization
-				if err := db.Where("budget_id = ?", b.ID).First(&real).Error; err == nil {
-					totalReal += real.Amount
+			if len(budgets) == 0 {
+				answer = "Saat ini tabel anggaran belanja di database PostgreSQL masih kosong (0 baris)."
+			} else {
+				var totalTarget, totalReal float64
+				for _, b := range budgets {
+					totalTarget += b.Amount
+					var real database.Realization
+					if err := db.Where("budget_id = ?", b.ID).First(&real).Error; err == nil {
+						totalReal += real.Amount
+					}
 				}
+				pct := 0.0
+				if totalTarget > 0 {
+					pct = (totalReal / totalTarget) * 100
+				}
+				answer = fmt.Sprintf("Total realisasi belanja negara di database mencapai Rp %.0f Triliun dari total pagu Rp %.0f Triliun (%.1f%%).", totalReal, totalTarget, pct)
+				sources = []string{"Database PostgreSQL Nusantara Transparan"}
 			}
-			answer = fmt.Sprintf("Total realisasi belanja negara saat ini mencapai Rp %.0f Triliun dari total pagu Rp %.0f Triliun (%.1f%%).", totalReal, totalTarget, (totalReal/totalTarget)*100)
 
 		case strings.Contains(q, "proyek"):
 			var count int64
 			db.Model(&database.Project{}).Where("classification = ?", "public").Count(&count)
-			answer = fmt.Sprintf("Terdapat %d proyek strategis pemerintah yang sedang dipantau secara publik di dalam database Nusantara Transparan.", count)
+			if count == 0 {
+				answer = "Saat ini belum ada data proyek (0 proyek) di dalam database PostgreSQL."
+			} else {
+				answer = fmt.Sprintf("Terdapat %d proyek pemerintah yang tercatat di dalam database PostgreSQL.", count)
+				sources = []string{"Database PostgreSQL Nusantara Transparan"}
+			}
 
 		case strings.Contains(q, "kementerian"):
-			answer = "Alokasi anggaran terbesar berdasarkan fungsi berada pada sektor Pendidikan (Rp 720 T), Pertahanan (Rp 330 T), dan Kesehatan (Rp 210 T)."
+			var budgets []database.Budget
+			db.Where("type = ? AND category = ? AND classification = ?", database.TypeExpenditure, "Fungsi", "public").Order("amount DESC").Find(&budgets)
+			if len(budgets) == 0 {
+				answer = "Saat ini belum ada data alokasi kementerian/fungsi di dalam database PostgreSQL."
+			} else {
+				answer = fmt.Sprintf("Alokasi anggaran tertinggi di database berada pada fungsi %s (Rp %.0f T).", budgets[0].Name, budgets[0].Amount)
+				sources = []string{"Database PostgreSQL Nusantara Transparan"}
+			}
 
 		default:
-			answer = "Saya hanya menjawab berdasarkan data resmi yang tersedia di database Nusantara Transparan dan tidak mengarang angka. Silakan tanyakan seputar Pajak, Pendidikan, Kesehatan, Belanja Negara, Kementerian, atau Proyek."
-			sources = []string{}
+			answer = "Saya hanya menjawab berdasarkan data resmi yang tersedia di database PostgreSQL Nusantara Transparan dan tidak mengarang angka."
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -154,30 +177,27 @@ func HandleAIChat(db *gorm.DB) http.HandlerFunc {
 // GetSecurityComplianceStatus memverifikasi secara real-time seluruh kontrol keamanan siber & kepatuhan
 func GetSecurityComplianceStatus(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Uji mandiri AES-256-GCM
 		enc, errEnc := auth.EncryptAES256("test-integrity-secret")
 		dec, errDec := auth.DecryptAES256(enc)
 		aesOK := errEnc == nil && errDec == nil && dec == "test-integrity-secret"
 
-		// Uji mandiri Digital Signature ECDSA P-256
 		_, sigOK := blockchain.SignPayload("verify-ecdsa-signature")
 
-		// Uji mandiri TOTP MFA
 		code := auth.GenerateMFACode("test-secret")
 		mfaOK := auth.VerifyMFACode("test-secret", code)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":               "compliant",
-			"aes256_at_rest":       aesOK,
-			"mfa_totp_ready":       mfaOK,
-			"rbac_middleware":      true,
-			"ecdsa_signature":      sigOK,
-			"sha256_hash_chain":    true,
+			"status":                "compliant",
+			"aes256_at_rest":        aesOK,
+			"mfa_totp_ready":        mfaOK,
+			"rbac_middleware":       true,
+			"ecdsa_signature":       sigOK,
+			"sha256_hash_chain":     true,
 			"http_security_headers": true,
-			"rate_limiter_ddos":    "120 req/min per IP",
-			"realtime_audit_log":   true,
+			"rate_limiter_ddos":     "120 req/min per IP",
+			"realtime_audit_log":    true,
 			"regulatory_compliance": []string{
 				"UU No. 14 Tahun 2008 (Keterbukaan Informasi Publik / UU KIP)",
 				"UU No. 27 Tahun 2022 (Pelindungan Data Pribadi / UU PDP)",

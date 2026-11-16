@@ -27,12 +27,9 @@ func main() {
 		log.Fatalf("❌ Gagal terhubung ke database: %v", err)
 	}
 
-	// 2. Pastikan Skema Tabel dan Data Awal Siap
+	// 2. Pastikan Skema Tabel Siap (Tanpa Auto-Seed Dummy Data)
 	if err := database.AutoMigrate(db); err != nil {
 		log.Fatalf("❌ Gagal AutoMigrate database: %v", err)
-	}
-	if err := database.SeedInitialData(db); err != nil {
-		log.Printf("⚠️ Peringatan saat seeding: %v", err)
 	}
 
 	// 3. Setup HTTP Router (Go 1.22+ ServeMux)

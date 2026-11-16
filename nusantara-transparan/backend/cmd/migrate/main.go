@@ -9,6 +9,7 @@ import (
 
 func main() {
 	seedFlag := flag.Bool("seed", false, "Isi data awal (seed) setelah migrasi")
+	cleanFlag := flag.Bool("clean", false, "Kosongkan seluruh isi tabel di PostgreSQL")
 	flag.Parse()
 
 	log.Println("==================================================")
@@ -24,6 +25,12 @@ func main() {
 		log.Fatalf("❌ Gagal migrasi: %v", err)
 	}
 
+	if *cleanFlag {
+		if err := database.CleanAllData(db); err != nil {
+			log.Fatalf("❌ Gagal mengosongkan data: %v", err)
+		}
+	}
+
 	if *seedFlag {
 		if err := database.SeedInitialData(db); err != nil {
 			log.Fatalf("❌ Gagal seed data: %v", err)
@@ -32,4 +39,3 @@ func main() {
 
 	log.Println("🚀 Operasi database selesai dengan sukses!")
 }
-

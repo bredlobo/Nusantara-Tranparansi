@@ -33,34 +33,39 @@ type BudgetRowResponse struct {
 	Real   float64 `json:"real"`
 }
 
-// GetDashboard menyajikan ringkasan statistik bulanan dan kementerian dari PostgreSQL
+// GetDashboard menyajikan ringkasan statistik bulanan dan kementerian murni dari PostgreSQL
 func GetDashboard(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		months := []string{"Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"}
 		monthly := make([]MonthlyRow, len(months))
-		for i, m := range months {
-			monthly[i] = MonthlyRow{
-				M:       m,
-				Revenue: float64(150 + i*9 + (i%3)*11),
-				Spend:   float64(160 + i*8 + (i%4)*9),
-				Budget:  float64(190 + i*7),
+
+		// Hitung total dari database PostgreSQL
+		var revBudgets []database.Budget
+		db.Where("type = ? AND classification = ?", database.TypeRevenue, "public").Find(&revBudgets)
+		var totalRevReal float64
+		for _, b := range revBudgets {
+			var real database.Realization
+			if err := db.Where("budget_id = ?", b.ID).First(&real).Error; err == nil {
+				totalRevReal += real.Amount
 			}
 		}
 
-		// Ambil anggaran per kementerian/fungsi dari database
-		var budgets []database.Budget
-		db.Where("type = ? AND classification = ?", database.TypeExpenditure, "public").
-			Order("amount DESC").
-			Find(&budgets)
+		var expBudgets []database.Budget
+		db.Where("type = ? AND classification = ?", database.TypeExpenditure, "public").Order("amount DESC").Find(&expBudgets)
+		var totalExpBudget, totalExpReal float64
+		ministries := make([]MinistryRow, 0)
 
-		var ministries []MinistryRow
-		for _, b := range budgets {
-			if b.Category == "Fungsi" {
-				var real database.Realization
-				realVal := 0.0
-				if err := db.Where("budget_id = ?", b.ID).First(&real).Error; err == nil {
-					realVal = real.Amount
-				}
+		for _, b := range expBudgets {
+			var real database.Realization
+			realVal := 0.0
+			if err := db.Where("budget_id = ?", b.ID).First(&real).Error; err == nil {
+				realVal = real.Amount
+			}
+
+			if b.Category == "Jenis Belanja" {
+				totalExpBudget += b.Amount
+				totalExpReal += realVal
+			} else if b.Category == "Fungsi" {
 				ministries = append(ministries, MinistryRow{
 					Name:   b.Name,
 					Budget: b.Amount,
@@ -69,11 +74,19 @@ func GetDashboard(db *gorm.DB) http.HandlerFunc {
 			}
 		}
 
-		// Tambahkan kementerian tambahan agar lengkap sesuai visualisasi
-		ministries = append(ministries,
-			MinistryRow{Name: "Pertahanan", Budget: 330, Real: 262},
-			MinistryRow{Name: "PUPR", Budget: 140, Real: 96},
-		)
+		// Distribusikan nilai per bulan hanya jika ada data di database (jika DB kosong = 0 semua)
+		for i, m := range months {
+			if totalExpBudget == 0 && totalRevReal == 0 {
+				monthly[i] = MonthlyRow{M: m, Revenue: 0, Spend: 0, Budget: 0}
+			} else {
+				monthly[i] = MonthlyRow{
+					M:       m,
+					Revenue: totalRevReal / 12.0,
+					Spend:   totalExpReal / 12.0,
+					Budget:  totalExpBudget / 12.0,
+				}
+			}
+		}
 
 		writeJSON(w, http.StatusOK, DashboardResponse{
 			Monthly:    monthly,
@@ -82,7 +95,7 @@ func GetDashboard(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// GetRevenue mengambil daftar anggaran & realisasi penerimaan negara dari PostgreSQL
+// GetRevenue mengambil daftar anggaran & realisasi penerimaan negara murni dari PostgreSQL
 func GetRevenue(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var budgets []database.Budget
@@ -93,7 +106,7 @@ func GetRevenue(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		var rows []BudgetRowResponse
+		rows := make([]BudgetRowResponse, 0, len(budgets))
 		for _, b := range budgets {
 			var real database.Realization
 			realAmount := 0.0
@@ -113,7 +126,7 @@ func GetRevenue(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
-// GetExpenditure mengambil daftar anggaran & realisasi belanja negara dari PostgreSQL
+// GetExpenditure mengambil daftar anggaran & realisasi belanja negara murni dari PostgreSQL
 func GetExpenditure(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var budgets []database.Budget
@@ -124,7 +137,7 @@ func GetExpenditure(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		var rows []BudgetRowResponse
+		rows := make([]BudgetRowResponse, 0, len(budgets))
 		for _, b := range budgets {
 			var real database.Realization
 			realAmount := 0.0
@@ -133,7 +146,7 @@ func GetExpenditure(db *gorm.DB) http.HandlerFunc {
 			}
 
 			rows = append(rows, BudgetRowResponse{
-				Group:  b.Category, // "Jenis Belanja" atau "Fungsi"
+				Group:  b.Category,
 				Name:   b.Name,
 				Target: b.Amount,
 				Real:   realAmount,
