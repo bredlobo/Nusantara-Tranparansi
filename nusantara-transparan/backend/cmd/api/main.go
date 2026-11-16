@@ -27,10 +27,11 @@ func main() {
 		log.Fatalf("❌ Gagal terhubung ke database: %v", err)
 	}
 
-	// 2. Pastikan Skema Tabel Siap (Tanpa Auto-Seed Dummy Data)
+	// 2. Pastikan Skema Tabel & Akun Staf RBAC Siap (Tanpa Auto-Seed Dummy Data Anggaran)
 	if err := database.AutoMigrate(db); err != nil {
 		log.Fatalf("❌ Gagal AutoMigrate database: %v", err)
 	}
+	auth.EnsureDefaultUsers(db)
 
 	// 3. Setup HTTP Router (Go 1.22+ ServeMux)
 	mux := http.NewServeMux()
@@ -59,14 +60,15 @@ func main() {
 	mux.HandleFunc("POST /api/v1/ai/chat", audit.HandleAIChat(db))
 	mux.HandleFunc("GET /api/v1/security/status", audit.GetSecurityComplianceStatus(db))
 
-	// Admin, Data Manager, & Auditor Workflow Endpoints (Aturan 6, 7 & RBAC)
+	// Admin, Data Manager, & Auditor Workflow Endpoints (Aturan 6, 7 & Otorisasi RBAC Ketat)
+	mux.HandleFunc("POST /api/v1/auth/login", auth.HandleLogin(db))
 	mux.HandleFunc("GET /api/v1/admin/submissions", audit.GetSubmissions(db))
-	mux.HandleFunc("POST /api/v1/admin/import", audit.HandleImport(db))
-	mux.HandleFunc("POST /api/v1/admin/review", audit.HandleReview(db))
-	mux.HandleFunc("POST /api/v1/admin/publish", audit.HandlePublish(db))
+	mux.HandleFunc("POST /api/v1/admin/import", auth.RequireRole(false, database.RoleDataManager, database.RoleAdmin)(audit.HandleImport(db)))
+	mux.HandleFunc("POST /api/v1/admin/review", auth.RequireRole(false, database.RoleAuditor, database.RoleAdmin)(audit.HandleReview(db)))
+	mux.HandleFunc("POST /api/v1/admin/publish", auth.RequireRole(false, database.RoleAdmin)(audit.HandlePublish(db)))
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", audit.GetAuditLogs(db))
 	mux.HandleFunc("GET /api/v1/admin/users", audit.GetUsers(db))
-	mux.HandleFunc("POST /api/v1/admin/users", audit.CreateUser(db))
+	mux.HandleFunc("POST /api/v1/admin/users", auth.RequireRole(false, database.RoleAdmin)(audit.CreateUser(db)))
 
 	// 4. Bungkus dengan Middleware Keamanan, CORS, dan Real-time Logging
 	handler := auth.SecurityAndCORSMiddleware(mux)

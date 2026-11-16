@@ -1,13 +1,27 @@
 import { useState, useEffect, ChangeEvent, FormEvent } from 'react'
-import { UploadCloud, ShieldAlert, CheckCircle2, XCircle, Send, Globe, UserPlus, RefreshCw, PlusCircle } from 'lucide-react'
+import { UploadCloud, ShieldAlert, CheckCircle2, XCircle, Send, Globe, UserPlus, RefreshCw, PlusCircle, KeyRound, Lock } from 'lucide-react'
 import { Head, Table, Pill, fmt } from '../components/ui'
 import { api } from '../services/api'
 import type { SubmissionItem, AuditLogItem, UserItem } from '../types'
 
 type Role = 'Data Manager' | 'Auditor / Reviewer' | 'Administrator'
 
+interface AuthSession {
+  username: string
+  full_name: string
+  role: string // 'data_manager' | 'auditor' | 'admin'
+  ui_role: Role
+  agency: string
+  token: string
+  mfa_code: string
+}
+
 export default function Admin() {
-  const [role, setRole] = useState<Role | ''>('')
+  const [session, setSession] = useState<AuthSession | null>(null)
+  const [loginUser, setLoginUser] = useState('')
+  const [loginPass, setLoginPass] = useState('')
+  const [loginError, setLoginError] = useState('')
+
   const [tab, setTab] = useState('')
   const [submissions, setSubmissions] = useState<SubmissionItem[]>([])
   const [logs, setLogs] = useState<AuditLogItem[]>([])
@@ -15,7 +29,7 @@ export default function Admin() {
   const [statusMsg, setStatusMsg] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // State khusus Data Manager (Form Input Manual & Upload CSV/JSON)
+  // State khusus Data Manager
   const [recType, setRecType] = useState<'budget' | 'project'>('budget')
   const [bType, setBType] = useState<'revenue' | 'expenditure'>('revenue')
   const [category, setCategory] = useState('Penerimaan')
@@ -54,80 +68,157 @@ export default function Admin() {
   }
 
   useEffect(() => {
-    if (role) refreshAll()
-  }, [role])
+    if (session) refreshAll()
+  }, [session])
 
-  if (!role) {
+  async function performLogin(usernameInput: string, passwordInput: string) {
+    setLoginError('')
+    try {
+      const res = await api.login(usernameInput, passwordInput)
+      const uiRole: Role =
+        res.role === 'admin'
+          ? 'Administrator'
+          : res.role === 'auditor'
+          ? 'Auditor / Reviewer'
+          : 'Data Manager'
+
+      const defaultTab =
+        uiRole === 'Data Manager'
+          ? 'Input & Unggah Data'
+          : uiRole === 'Auditor / Reviewer'
+          ? 'Antrean Verifikasi Auditor'
+          : 'Publikasi Data Resmi'
+
+      setSession({
+        username: res.username,
+        full_name: res.full_name,
+        role: res.role,
+        ui_role: uiRole,
+        agency: res.agency,
+        token: res.token,
+        mfa_code: res.mfa_code,
+      })
+      setTab(defaultTab)
+      setStatusMsg('')
+    } catch (err: any) {
+      setLoginError(err.message || 'Login gagal')
+    }
+  }
+
+  function onLoginFormSubmit(e: FormEvent) {
+    e.preventDefault()
+    performLogin(loginUser, loginPass)
+  }
+
+  if (!session) {
     return (
       <>
         <Head
-          title="Portal Tata Kelola & Otorisasi Berjenjang (RBAC)"
-          sub="Pilih peran untuk masuk ke layar kerja masing-masing sesuai pemisahan wewenang (Four-Eyes Principle)."
+          title="Autentikasi Staf & Otorisasi Berjenjang (RBAC + MFA)"
+          sub="Masuk menggunakan akun staf yang terdaftar di tabel users PostgreSQL."
         />
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="card flex flex-col justify-between border-white/15">
-            <div>
-              <span className="rounded bg-blue/30 px-2 py-1 text-xs font-bold text-lime">TAHAP 1 — INPUT & DRAF</span>
-              <h3 className="mt-3 text-lg font-extrabold">1. Data Manager</h3>
-              <p className="mt-2 text-sm text-white/70">
-                Menginput data anggaran/proyek atau mengunggah dataset CSV/JSON ke PostgreSQL. Data masuk dengan status <b>Draf</b> dan belum tampil ke publik.
-              </p>
-            </div>
-            <button
-              className="btn-p mt-6 w-full justify-center"
-              onClick={() => {
-                setRole('Data Manager')
-                setTab('Input & Unggah Data')
-                setStatusMsg('')
-              }}
-            >
-              Masuk sebagai Data Manager
-            </button>
-          </div>
 
-          <div className="card flex flex-col justify-between border-white/15">
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Form Login Resmi PostgreSQL */}
+          <form onSubmit={onLoginFormSubmit} className="card space-y-4 border-lime/40">
+            <h3 className="flex items-center gap-2 text-lg font-extrabold">
+              <Lock className="text-lime" size={20} /> Login Portal Internal
+            </h3>
+            {loginError && (
+              <div className="rounded border border-red-500/40 bg-red-500/10 p-2.5 text-xs text-red-300">
+                ❌ {loginError}
+              </div>
+            )}
             <div>
-              <span className="rounded bg-blue/30 px-2 py-1 text-xs font-bold text-lime">TAHAP 2 — VERIFIKASI & AUDIT</span>
-              <h3 className="mt-3 text-lg font-extrabold">2. Auditor / Reviewer</h3>
-              <p className="mt-2 text-sm text-white/70">
-                Memeriksa antrean data <b>Draf</b>, memverifikasi keutuhan SHA-256 Hash Blockchain, serta memberikan persetujuan (<b>Approve</b>) atau penolakan (<b>Reject</b>).
-              </p>
+              <label className="text-xs text-white/60">Username</label>
+              <input
+                className="inp mt-1 w-full"
+                required
+                value={loginUser}
+                onChange={e => setLoginUser(e.target.value)}
+                placeholder="datamanager / auditor / admin"
+              />
             </div>
-            <button
-              className="btn-p mt-6 w-full justify-center"
-              onClick={() => {
-                setRole('Auditor / Reviewer')
-                setTab('Antrean Verifikasi Auditor')
-                setStatusMsg('')
-              }}
-            >
-              Masuk sebagai Auditor / Reviewer
+            <div>
+              <label className="text-xs text-white/60">Password</label>
+              <input
+                className="inp mt-1 w-full"
+                type="password"
+                required
+                value={loginPass}
+                onChange={e => setLoginPass(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <button type="submit" className="btn-p w-full justify-center">
+              <KeyRound size={16} /> Masuk dengan Kredensial Database
             </button>
-          </div>
+          </form>
 
-          <div className="card flex flex-col justify-between border-white/15">
-            <div>
-              <span className="rounded bg-blue/30 px-2 py-1 text-xs font-bold text-lime">TAHAP 3 — PUBLIKASI & ADMIN</span>
-              <h3 className="mt-3 text-lg font-extrabold">3. Administrator</h3>
-              <p className="mt-2 text-sm text-white/70">
-                Mengesahkan publikasi akhir (<b>Publish</b>) atas data yang sudah disetujui Auditor agar tayang di Dashboard Publik, serta mengelola akun pengguna.
+          {/* 3 Kartu Akses Cepat (1-Klik Login Sesuai Role) */}
+          <div className="space-y-4 lg:col-span-2">
+            <div className="card">
+              <h3 className="text-sm font-bold text-lime">Akses Cepat Staf Resmi (1-Klik Login Otomatis ke PostgreSQL)</h3>
+              <p className="mt-1 text-xs text-white/60">
+                Klik salah satu kartu peran di bawah ini untuk langsung login menggunakan akun resmi di PostgreSQL dan menguji pemisahan layar kerja (Four-Eyes Principle):
               </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-white/15 bg-white/[0.02] p-3.5 flex flex-col justify-between">
+                  <div>
+                    <span className="rounded bg-blue/30 px-2 py-0.5 text-[10px] font-bold text-lime">TAHAP 1 — INPUT</span>
+                    <h4 className="mt-2 font-bold">1. Data Manager</h4>
+                    <p className="mt-1 font-mono text-xs text-white/50">User: datamanager</p>
+                    <p className="font-mono text-xs text-white/50">Pass: manager123</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-p mt-4 w-full justify-center text-xs"
+                    onClick={() => performLogin('datamanager', 'manager123')}
+                  >
+                    Login Data Manager
+                  </button>
+                </div>
+
+                <div className="rounded-lg border border-white/15 bg-white/[0.02] p-3.5 flex flex-col justify-between">
+                  <div>
+                    <span className="rounded bg-blue/30 px-2 py-0.5 text-[10px] font-bold text-lime">TAHAP 2 — AUDIT</span>
+                    <h4 className="mt-2 font-bold">2. Auditor BPK</h4>
+                    <p className="mt-1 font-mono text-xs text-white/50">User: auditor</p>
+                    <p className="font-mono text-xs text-white/50">Pass: auditor123</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-p mt-4 w-full justify-center text-xs"
+                    onClick={() => performLogin('auditor', 'auditor123')}
+                  >
+                    Login Auditor
+                  </button>
+                </div>
+
+                <div className="rounded-lg border border-white/15 bg-white/[0.02] p-3.5 flex flex-col justify-between">
+                  <div>
+                    <span className="rounded bg-blue/30 px-2 py-0.5 text-[10px] font-bold text-lime">TAHAP 3 — PUBLISH</span>
+                    <h4 className="mt-2 font-bold">3. Administrator</h4>
+                    <p className="mt-1 font-mono text-xs text-white/50">User: admin</p>
+                    <p className="font-mono text-xs text-white/50">Pass: admin123</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-p mt-4 w-full justify-center text-xs"
+                    onClick={() => performLogin('admin', 'admin123')}
+                  >
+                    Login Administrator
+                  </button>
+                </div>
+              </div>
             </div>
-            <button
-              className="btn-p mt-6 w-full justify-center"
-              onClick={() => {
-                setRole('Administrator')
-                setTab('Publikasi Data Resmi')
-                setStatusMsg('')
-              }}
-            >
-              Masuk sebagai Administrator
-            </button>
           </div>
         </div>
       </>
     )
   }
+
+  const role = session.ui_role
 
   const tabsByRole: Record<Role, string[]> = {
     'Data Manager': ['Input & Unggah Data', 'Daftar Draf Saya', 'Audit Log'],
@@ -135,10 +226,9 @@ export default function Admin() {
     Administrator: ['Publikasi Data Resmi', 'Manajemen Pengguna', 'Audit Log'],
   }
 
-  // Handler Form Input Manual oleh Data Manager
   async function handleManualSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name || !target) return
+    if (!name || !target || !session) return
     try {
       setStatusMsg('Menyimpan draf ke PostgreSQL...')
       const item = {
@@ -154,7 +244,7 @@ export default function Admin() {
         period: '2026',
         source,
       }
-      const res = await api.importData('Data Manager', [item])
+      const res = await api.importData(session.full_name, [item], session.role)
       setStatusMsg(`✅ ${res.message}`)
       setName('')
       setTarget('')
@@ -165,7 +255,6 @@ export default function Admin() {
     }
   }
 
-  // Handler Upload File CSV / JSON oleh Data Manager
   async function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
@@ -217,10 +306,10 @@ export default function Admin() {
   }
 
   async function submitParsedFile() {
-    if (parsedItems.length === 0) return
+    if (parsedItems.length === 0 || !session) return
     try {
       setStatusMsg('Mengunggah dataset ke PostgreSQL...')
-      const res = await api.importData('Data Manager', parsedItems)
+      const res = await api.importData(session.full_name, parsedItems, session.role)
       setStatusMsg(`✅ ${res.message}`)
       setParsedItems([])
       setFileName('')
@@ -230,11 +319,11 @@ export default function Admin() {
     }
   }
 
-  // Handler Review oleh Auditor
   async function handleAuditorDecision(item: SubmissionItem, decision: 'approve' | 'reject') {
+    if (!session) return
     try {
       const reason = decision === 'reject' ? 'Data memerlukan kelengkapan dokumen pendukung' : 'Hash cocok & data valid'
-      const res = await api.reviewItem(item.id, item.record_type, decision, 'Auditor BPK', reason)
+      const res = await api.reviewItem(item.id, item.record_type, decision, session.full_name, reason, session.role)
       setStatusMsg(`✅ ${res.message}`)
       await refreshAll()
     } catch (err: any) {
@@ -242,10 +331,10 @@ export default function Admin() {
     }
   }
 
-  // Handler Publish oleh Administrator
   async function handleAdminPublish(item?: SubmissionItem, publishAll = false) {
+    if (!session) return
     try {
-      const res = await api.publishItem(item?.id ?? 'ALL', item?.record_type ?? 'budget', publishAll, 'Administrator Utama')
+      const res = await api.publishItem(item?.id ?? 'ALL', item?.record_type ?? 'budget', publishAll, session.full_name, session.role)
       setStatusMsg(`✅ ${res.message}`)
       await refreshAll()
     } catch (err: any) {
@@ -253,18 +342,20 @@ export default function Admin() {
     }
   }
 
-  // Handler Tambah User oleh Administrator
   async function handleCreateUser(e: FormEvent) {
     e.preventDefault()
-    if (!uUsername || !uFullName) return
+    if (!uUsername || !uFullName || !session) return
     try {
-      await api.createUser({
-        username: uUsername,
-        email: uEmail || `${uUsername}@transparan.go.id`,
-        full_name: uFullName,
-        role: uRole,
-        agency: uAgency || 'Kemenkeu RI',
-      })
+      await api.createUser(
+        {
+          username: uUsername,
+          email: uEmail || `${uUsername}@transparan.go.id`,
+          full_name: uFullName,
+          role: uRole,
+          agency: uAgency || 'Kemenkeu RI',
+        },
+        session.role,
+      )
       setStatusMsg(`✅ Pengguna ${uFullName} berhasil ditambahkan ke PostgreSQL!`)
       setUUsername('')
       setUEmail('')
@@ -287,13 +378,7 @@ export default function Admin() {
     <>
       <Head
         title={`Workspace: ${role}`}
-        sub={
-          role === 'Data Manager'
-            ? 'Layar Khusus Operator Data — Input & unggah draf data anggaran/proyek untuk diperiksa Auditor.'
-            : role === 'Auditor / Reviewer'
-            ? 'Layar Khusus Pemeriksa Independen — Verifikasi keutuhan hash blockchain dan setujui/tolak draf data.'
-            : 'Layar Khusus Administrator — Publikasikan data yang telah disetujui Auditor ke Dashboard Publik & kelola pengguna.'
-        }
+        sub={`Login aktif: ${session.full_name} (${session.agency}) • Kode TOTP MFA Aktif: ${session.mfa_code}`}
       />
 
       <div className="mb-6 flex flex-wrap items-center gap-2">
@@ -305,8 +390,8 @@ export default function Admin() {
         <button className="btn-s flex items-center gap-1.5" onClick={refreshAll} title="Muat ulang dari PostgreSQL">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Segarkan Data
         </button>
-        <button className="btn-s ml-auto" onClick={() => setRole('')}>
-          Ganti Peran / Keluar
+        <button className="btn-s ml-auto" onClick={() => setSession(null)}>
+          Keluar / Ganti Akun ({session.username})
         </button>
       </div>
 
@@ -316,9 +401,7 @@ export default function Admin() {
         </div>
       )}
 
-      {/* =====================================================================
-          SCREEN 1: DATA MANAGER
-      ===================================================================== */}
+      {/* SCREEN 1: DATA MANAGER */}
       {role === 'Data Manager' && tab === 'Input & Unggah Data' && (
         <div className="grid gap-6 lg:grid-cols-2">
           <form onSubmit={handleManualSubmit} className="card space-y-4">
@@ -441,15 +524,13 @@ export default function Admin() {
         />
       )}
 
-      {/* =====================================================================
-          SCREEN 2: AUDITOR / REVIEWER
-      ===================================================================== */}
+      {/* SCREEN 2: AUDITOR / REVIEWER */}
       {role === 'Auditor / Reviewer' && tab === 'Antrean Verifikasi Auditor' && (
         <div className="space-y-4">
           <div className="card flex items-center gap-3 text-sm">
             <ShieldAlert className="shrink-0 text-lime" />
             <p>
-              Sebagai <b>Auditor Independen</b>, periksa kecocokan nilai dan hash SHA-256 di bawah ini. Hanya data yang Anda <b>Setujui (Approve)</b> yang dapat dipublikasikan oleh Administrator.
+              Sebagai <b>Auditor Independen ({session.full_name})</b>, periksa kecocokan nilai dan hash SHA-256 di bawah ini. Hanya data yang Anda <b>Setujui (Approve)</b> yang dapat dipublikasikan oleh Administrator.
             </p>
           </div>
           <Table
@@ -488,14 +569,12 @@ export default function Admin() {
         </div>
       )}
 
-      {/* =====================================================================
-          SCREEN 3: ADMINISTRATOR
-      ===================================================================== */}
+      {/* SCREEN 3: ADMINISTRATOR */}
       {role === 'Administrator' && tab === 'Publikasi Data Resmi' && (
         <div className="space-y-4">
           <div className="card flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm">
-              <p className="font-bold">Panel Pengesahan & Publikasi Portal Publik</p>
+              <p className="font-bold">Panel Pengesahan & Publikasi Portal Publik ({session.full_name})</p>
               <p className="text-white/60">
                 Data dengan status <b>Approved (Disetujui Auditor)</b> siap dipublikasikan agar langsung tampil di Dashboard Publik.
               </p>
@@ -576,9 +655,7 @@ export default function Admin() {
         </div>
       )}
 
-      {/* =====================================================================
-          SHARED TAB: AUDIT LOG (DARI TABEL AUDIT_LOGS POSTGRESQL)
-      ===================================================================== */}
+      {/* SHARED TAB: AUDIT LOG */}
       {tab === 'Audit Log' && (
         <Table
           head={['Waktu', 'Aktor / Peran', 'Aksi', 'Target ID', 'Keterangan Audit']}

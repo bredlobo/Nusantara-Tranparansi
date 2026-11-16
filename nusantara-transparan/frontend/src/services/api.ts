@@ -59,48 +59,59 @@ export const api = {
     return m.chatReply(question)
   },
 
-  // Admin, Data Manager, & Auditor Workflow Endpoints (Live PostgreSQL)
+  // Admin, Data Manager, & Auditor Workflow Endpoints (Live PostgreSQL + RBAC)
+  async login(username: string, password: string) {
+    const r = await fetch(BASE + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+    const data = await r.json()
+    if (!r.ok) throw new Error(data.error || 'Gagal login')
+    return data
+  },
+
   submissions: () => get<SubmissionItem[]>('/admin/submissions', []),
   auditLogs: () => get<AuditLogItem[]>('/admin/audit-logs', []),
   users: () => get<UserItem[]>('/admin/users', []),
 
-  async importData(actorName: string, items: any[]) {
+  async importData(actorName: string, items: any[], userRole = 'data_manager') {
     const r = await fetch(BASE + '/admin/import', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Role': userRole },
       body: JSON.stringify({ actor_name: actorName, items }),
     })
-    if (!r.ok) throw new Error('Gagal mengimpor data ke PostgreSQL')
+    if (!r.ok) throw new Error('Gagal mengimpor data ke PostgreSQL (RBAC)')
     return await r.json()
   },
 
-  async reviewItem(id: string, recordType: string, decision: 'approve' | 'reject', actorName: string, reason = '') {
+  async reviewItem(id: string, recordType: string, decision: 'approve' | 'reject', actorName: string, reason = '', userRole = 'auditor') {
     const r = await fetch(BASE + '/admin/review', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Role': userRole },
       body: JSON.stringify({ id, record_type: recordType, decision, actor_name: actorName, reason }),
     })
-    if (!r.ok) throw new Error('Gagal memproses review')
+    if (!r.ok) throw new Error('Gagal memproses review (RBAC)')
     return await r.json()
   },
 
-  async publishItem(id: string, recordType: string, publishAll: boolean, actorName: string) {
+  async publishItem(id: string, recordType: string, publishAll: boolean, actorName: string, userRole = 'admin') {
     const r = await fetch(BASE + '/admin/publish', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Role': userRole },
       body: JSON.stringify({ id, record_type: recordType, publish_all: publishAll, actor_name: actorName }),
     })
-    if (!r.ok) throw new Error('Gagal mempublikasikan data')
+    if (!r.ok) throw new Error('Gagal mempublikasikan data (RBAC)')
     return await r.json()
   },
 
-  async createUser(payload: { username: string; email: string; full_name: string; role: string; agency: string }) {
+  async createUser(payload: { username: string; email: string; full_name: string; role: string; agency: string }, userRole = 'admin') {
     const r = await fetch(BASE + '/admin/users', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-User-Role': userRole },
       body: JSON.stringify(payload),
     })
-    if (!r.ok) throw new Error('Gagal menambahkan pengguna')
+    if (!r.ok) throw new Error('Gagal menambahkan pengguna (RBAC)')
     return await r.json()
   },
 }
