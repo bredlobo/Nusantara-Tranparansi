@@ -41,3 +41,7 @@ ENV/
 .DS_Store
 Thumbs.db
 
+# AI Assistant Local Notes / Rules
+GEMINI.md
+**/GEMINI.md
+
