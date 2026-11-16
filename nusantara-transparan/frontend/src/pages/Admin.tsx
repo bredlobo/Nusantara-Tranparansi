@@ -275,6 +275,26 @@ export default function Admin() {
     Administrator: ['Publikasi Data Resmi', 'Manajemen Pengguna', 'Evaluasi & Performa Sistem', 'Audit Log'],
   }
 
+  async function handleLoadDummySample() {
+    if (!session) return
+    const dummyDataset = [
+      { record_type: 'budget', type: 'revenue', category: 'Penerimaan', name: 'Pajak', target: 2000, real: 1480, source: 'Data Simulasi / Contoh Cara Kerja' },
+      { record_type: 'budget', type: 'revenue', category: 'Penerimaan', name: 'Bea dan Cukai', target: 300, real: 231, source: 'Data Simulasi / Contoh Cara Kerja' },
+      { record_type: 'budget', type: 'revenue', category: 'Penerimaan', name: 'PNBP', target: 480, real: 402, source: 'Data Simulasi / Contoh Cara Kerja' },
+      { record_type: 'budget', type: 'expenditure', category: 'Jenis Belanja', name: 'Belanja Pemerintah Pusat', target: 3100, real: 2210, source: 'Data Simulasi / Contoh Cara Kerja' },
+      { record_type: 'budget', type: 'expenditure', category: 'Fungsi', name: 'Pendidikan', target: 720, real: 510, source: 'Data Simulasi / Contoh Cara Kerja' },
+      { record_type: 'project', category: 'Infrastruktur', name: 'Pembangunan Bendungan & Irigasi (Simulasi)', agency: 'Instansi Pekerjaan Umum (Simulasi)', region: 'Jawa Barat', target: 45, real: 32, status: 'Berjalan', source: 'Data Simulasi / Contoh Cara Kerja' },
+    ]
+    try {
+      setStatusMsg('Mengimpor data dummy contoh ke PostgreSQL...')
+      const res = await api.importData(session.full_name, dummyDataset, session.role)
+      setStatusMsg(`✅ ${res.message}`)
+      await refreshAll()
+    } catch (err: any) {
+      setStatusMsg(`❌ Gagal: ${err.message}`)
+    }
+  }
+
   async function handleManualSubmit(e: FormEvent) {
     e.preventDefault()
     if (!name || !target || !session) return
@@ -554,6 +574,14 @@ export default function Admin() {
                 <Send size={16} /> Kirim {parsedItems.length} Baris ke Database sebagai Draf
               </button>
             )}
+            <div className="border-t border-white/10 pt-4">
+              <p className="mb-2 text-xs text-white/60">
+                <b>Contoh Cara Kerja Sistem:</b> Klik tombol di bawah untuk memuat data dummy/simulasi sebagai Draf tanpa perlu membuat file terlebih dahulu:
+              </p>
+              <button type="button" onClick={handleLoadDummySample} className="btn-s w-full justify-center border-lime/50 text-lime hover:bg-lime/10">
+                🚀 Muat Data Dummy / Simulasi (1-Klik)
+              </button>
+            </div>
           </div>
         </div>
       )}
