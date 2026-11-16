@@ -26,6 +26,19 @@ export const api = {
   expenditure: () => get('/expenditure', m.expenditure),
   projects: () => get('/projects', m.projects),
   records: () => get('/blockchain/records', m.records),
+  verifyChain: () =>
+    get('/blockchain/verify', {
+      chain_intact: true,
+      total_blocks: 0,
+      algorithm: 'SHA-256 Hash Chain + ECDSA P-256 Digital Signature',
+      genesis_hash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      latest_head_hash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    }),
+  async verifyRecord(query: string) {
+    const r = await fetch(BASE + '/blockchain/verify-record?q=' + encodeURIComponent(query))
+    if (!r.ok) throw new Error('Gagal melakukan verifikasi hash')
+    return await r.json()
+  },
   anomalies: () => get('/ai/anomalies', m.anomalies),
   async chat(question: string): Promise<ChatReply> {
     if (USE_API) {

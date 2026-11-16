@@ -1,0 +1,86 @@
+# =============================================================================
+# NUSANTARA TRANSPARAN — KONFIGURASI JARINGAN KONSORSIUM HYPERLEDGER FABRIC
+# Organisasi Anggota Konsorsium:
+# 1. KemenkeuMSP (Kementerian Keuangan - Pengelola & Penerbit Data)
+# 2. BPKMSP (Badan Pemeriksa Keuangan - Auditor & Verifikator Independen)
+# =============================================================================
+
+Organizations:
+  - &OrdererOrg
+      Name: OrdererMSP
+      ID: OrdererMSP
+      MSPDir: ../network/crypto-config/ordererOrganizations/transparan.go.id/msp
+      Policies:
+        Readers:
+          Type: Signature
+          Rule: "OR('OrdererMSP.member')"
+        Writers:
+          Type: Signature
+          Rule: "OR('OrdererMSP.member')"
+        Admins:
+          Type: Signature
+          Rule: "OR('OrdererMSP.admin')"
+
+  - &KemenkeuOrg
+      Name: KemenkeuMSP
+      ID: KemenkeuMSP
+      MSPDir: ../network/crypto-config/peerOrganizations/kemenkeu.go.id/msp
+      AnchorPeers:
+        - Host: peer0.kemenkeu.go.id
+          Port: 7051
+      Policies:
+        Readers:
+          Type: Signature
+          Rule: "OR('KemenkeuMSP.admin', 'KemenkeuMSP.peer', 'KemenkeuMSP.client')"
+        Writers:
+          Type: Signature
+          Rule: "OR('KemenkeuMSP.admin', 'KemenkeuMSP.client')"
+        Endorsement:
+          Type: Signature
+          Rule: "OR('KemenkeuMSP.peer')"
+
+  - &BPKOrg
+      Name: BPKMSP
+      ID: BPKMSP
+      MSPDir: ../network/crypto-config/peerOrganizations/bpk.go.id/msp
+      AnchorPeers:
+        - Host: peer0.bpk.go.id
+          Port: 9051
+      Policies:
+        Readers:
+          Type: Signature
+          Rule: "OR('BPKMSP.admin', 'BPKMSP.peer', 'BPKMSP.client')"
+        Writers:
+          Type: Signature
+          Rule: "OR('BPKMSP.admin', 'BPKMSP.client')"
+        Endorsement:
+          Type: Signature
+          Rule: "OR('BPKMSP.peer')"
+
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    LifecycleEndorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+
+Profiles:
+  NusantaraAPBNChannel:
+    Consortium: TransparansiConsortium
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *KemenkeuOrg
+        - *BPKOrg

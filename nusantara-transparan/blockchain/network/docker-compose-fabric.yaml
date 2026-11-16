@@ -1,0 +1,51 @@
+# =============================================================================
+# NUSANTARA TRANSPARAN — HYPERLEDGER FABRIC NETWORK TOPOLOGY
+# Nodes:
+# - orderer.transparan.go.id (Ordering Service)
+# - peer0.kemenkeu.go.id (Node Kementerian Keuangan)
+# - peer0.bpk.go.id (Node Badan Pemeriksa Keuangan / Auditor)
+# =============================================================================
+
+version: '3.8'
+
+networks:
+  nusantara_fabric:
+    name: nusantara_transparan_fabric
+
+services:
+  orderer.transparan.go.id:
+    container_name: orderer.transparan.go.id
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+    ports:
+      - "7050:7050"
+    networks:
+      - nusantara_fabric
+
+  peer0.kemenkeu.go.id:
+    container_name: peer0.kemenkeu.go.id
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_PEER_ID=peer0.kemenkeu.go.id
+      - CORE_PEER_ADDRESS=peer0.kemenkeu.go.id:7051
+      - CORE_PEER_LOCALMSPID=KemenkeuMSP
+    ports:
+      - "7051:7051"
+    networks:
+      - nusantara_fabric
+
+  peer0.bpk.go.id:
+    container_name: peer0.bpk.go.id
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_PEER_ID=peer0.bpk.go.id
+      - CORE_PEER_ADDRESS=peer0.bpk.go.id:9051
+      - CORE_PEER_LOCALMSPID=BPKMSP
+    ports:
+      - "9051:9051"
+    networks:
+      - nusantara_fabric

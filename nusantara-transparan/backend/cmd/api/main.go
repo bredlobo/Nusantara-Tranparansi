@@ -54,6 +54,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/transactions", transaction.GetTransactions(db))
 	mux.HandleFunc("GET /api/v1/blockchain/records", blockchain.GetRecords(db))
 	mux.HandleFunc("GET /api/v1/blockchain/verify", blockchain.VerifyHashChain(db))
+	mux.HandleFunc("GET /api/v1/blockchain/verify-record", blockchain.VerifySingleQuery(db))
 	mux.HandleFunc("GET /api/v1/ai/anomalies", audit.GetAnomalies(db))
 	mux.HandleFunc("POST /api/v1/ai/chat", audit.HandleAIChat(db))
 	mux.HandleFunc("GET /api/v1/security/status", audit.GetSecurityComplianceStatus(db))
