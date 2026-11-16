@@ -1,5 +1,5 @@
 import * as m from '../data/mock'
-import type { ChatReply } from '../types'
+import type { ChatReply, SubmissionItem, AuditLogItem, UserItem } from '../types'
 
 // Switch: VITE_USE_API=true -> Go REST backend (PostgreSQL); dilengkapi Graceful Degradation (Aturan 5)
 const USE_API = import.meta.env.VITE_USE_API !== 'false'
@@ -44,5 +44,50 @@ export const api = {
     }
     await new Promise(r => setTimeout(r, 700))
     return m.chatReply(question)
+  },
+
+  // Admin, Data Manager, & Auditor Workflow Endpoints (Live PostgreSQL)
+  submissions: () => get<SubmissionItem[]>('/admin/submissions', []),
+  auditLogs: () => get<AuditLogItem[]>('/admin/audit-logs', []),
+  users: () => get<UserItem[]>('/admin/users', []),
+
+  async importData(actorName: string, items: any[]) {
+    const r = await fetch(BASE + '/admin/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actor_name: actorName, items }),
+    })
+    if (!r.ok) throw new Error('Gagal mengimpor data ke PostgreSQL')
+    return await r.json()
+  },
+
+  async reviewItem(id: string, recordType: string, decision: 'approve' | 'reject', actorName: string, reason = '') {
+    const r = await fetch(BASE + '/admin/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, record_type: recordType, decision, actor_name: actorName, reason }),
+    })
+    if (!r.ok) throw new Error('Gagal memproses review')
+    return await r.json()
+  },
+
+  async publishItem(id: string, recordType: string, publishAll: boolean, actorName: string) {
+    const r = await fetch(BASE + '/admin/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, record_type: recordType, publish_all: publishAll, actor_name: actorName }),
+    })
+    if (!r.ok) throw new Error('Gagal mempublikasikan data')
+    return await r.json()
+  },
+
+  async createUser(payload: { username: string; email: string; full_name: string; role: string; agency: string }) {
+    const r = await fetch(BASE + '/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!r.ok) throw new Error('Gagal menambahkan pengguna')
+    return await r.json()
   },
 }

@@ -27,7 +27,7 @@ type ProjectResponse struct {
 func GetProjects(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var projects []database.Project
-		if err := db.Where("classification = ?", "public").
+		if err := db.Where("validation_status = ? AND classification = ?", "published", "public").
 			Order("id ASC").
 			Find(&projects).Error; err != nil {
 			http.Error(w, "Gagal membaca data proyek", http.StatusInternalServerError)

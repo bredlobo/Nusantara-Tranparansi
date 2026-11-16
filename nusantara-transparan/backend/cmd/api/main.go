@@ -58,6 +58,15 @@ func main() {
 	mux.HandleFunc("POST /api/v1/ai/chat", audit.HandleAIChat(db))
 	mux.HandleFunc("GET /api/v1/security/status", audit.GetSecurityComplianceStatus(db))
 
+	// Admin, Data Manager, & Auditor Workflow Endpoints (Aturan 6, 7 & RBAC)
+	mux.HandleFunc("GET /api/v1/admin/submissions", audit.GetSubmissions(db))
+	mux.HandleFunc("POST /api/v1/admin/import", audit.HandleImport(db))
+	mux.HandleFunc("POST /api/v1/admin/review", audit.HandleReview(db))
+	mux.HandleFunc("POST /api/v1/admin/publish", audit.HandlePublish(db))
+	mux.HandleFunc("GET /api/v1/admin/audit-logs", audit.GetAuditLogs(db))
+	mux.HandleFunc("GET /api/v1/admin/users", audit.GetUsers(db))
+	mux.HandleFunc("POST /api/v1/admin/users", audit.CreateUser(db))
+
 	// 4. Bungkus dengan Middleware Keamanan, CORS, dan Real-time Logging
 	handler := auth.SecurityAndCORSMiddleware(mux)
 

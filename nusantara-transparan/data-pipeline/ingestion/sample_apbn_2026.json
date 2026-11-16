@@ -1,0 +1,49 @@
+[
+  {
+    "record_type": "budget",
+    "type": "revenue",
+    "category": "Penerimaan",
+    "name": "Pajak",
+    "target": 2000,
+    "real": 1480,
+    "source": "Kemenkeu RI (APBN 2026)"
+  },
+  {
+    "record_type": "budget",
+    "type": "revenue",
+    "category": "Penerimaan",
+    "name": "PNBP",
+    "target": 480,
+    "real": 402,
+    "source": "Kemenkeu RI (APBN 2026)"
+  },
+  {
+    "record_type": "budget",
+    "type": "expenditure",
+    "category": "Jenis Belanja",
+    "name": "Belanja Pemerintah Pusat",
+    "target": 3100,
+    "real": 2210,
+    "source": "Kemenkeu RI (APBN 2026)"
+  },
+  {
+    "record_type": "budget",
+    "type": "expenditure",
+    "category": "Fungsi",
+    "name": "Pendidikan",
+    "target": 720,
+    "real": 510,
+    "source": "Kemenkeu RI (APBN 2026)"
+  },
+  {
+    "record_type": "project",
+    "category": "Infrastruktur",
+    "name": "Pembangunan Bendungan & Irigasi Nasional",
+    "agency": "Kementerian PUPR",
+    "region": "Jawa Barat",
+    "target": 45,
+    "real": 32,
+    "status": "Berjalan",
+    "source": "Sistem Monitoring Pengadaan Nasional"
+  }
+]

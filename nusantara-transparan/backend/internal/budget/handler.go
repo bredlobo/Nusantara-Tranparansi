@@ -39,9 +39,9 @@ func GetDashboard(db *gorm.DB) http.HandlerFunc {
 		months := []string{"Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"}
 		monthly := make([]MonthlyRow, len(months))
 
-		// Hitung total dari database PostgreSQL
+		// Hitung total dari database PostgreSQL (hanya data yang sudah 'published' & 'public')
 		var revBudgets []database.Budget
-		db.Where("type = ? AND classification = ?", database.TypeRevenue, "public").Find(&revBudgets)
+		db.Where("type = ? AND validation_status = ? AND classification = ?", database.TypeRevenue, "published", "public").Find(&revBudgets)
 		var totalRevReal float64
 		for _, b := range revBudgets {
 			var real database.Realization
@@ -51,7 +51,7 @@ func GetDashboard(db *gorm.DB) http.HandlerFunc {
 		}
 
 		var expBudgets []database.Budget
-		db.Where("type = ? AND classification = ?", database.TypeExpenditure, "public").Order("amount DESC").Find(&expBudgets)
+		db.Where("type = ? AND validation_status = ? AND classification = ?", database.TypeExpenditure, "published", "public").Order("amount DESC").Find(&expBudgets)
 		var totalExpBudget, totalExpReal float64
 		ministries := make([]MinistryRow, 0)
 
@@ -99,7 +99,7 @@ func GetDashboard(db *gorm.DB) http.HandlerFunc {
 func GetRevenue(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var budgets []database.Budget
-		if err := db.Where("type = ? AND classification = ?", database.TypeRevenue, "public").
+		if err := db.Where("type = ? AND validation_status = ? AND classification = ?", database.TypeRevenue, "published", "public").
 			Order("id ASC").
 			Find(&budgets).Error; err != nil {
 			http.Error(w, "Gagal membaca data penerimaan", http.StatusInternalServerError)
@@ -130,7 +130,7 @@ func GetRevenue(db *gorm.DB) http.HandlerFunc {
 func GetExpenditure(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var budgets []database.Budget
-		if err := db.Where("type = ? AND classification = ?", database.TypeExpenditure, "public").
+		if err := db.Where("type = ? AND validation_status = ? AND classification = ?", database.TypeExpenditure, "published", "public").
 			Order("id ASC").
 			Find(&budgets).Error; err != nil {
 			http.Error(w, "Gagal membaca data belanja", http.StatusInternalServerError)
