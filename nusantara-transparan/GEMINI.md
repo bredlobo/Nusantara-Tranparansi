@@ -81,3 +81,23 @@ Setiap perancangan dan penulisan kode wajib mematuhi 9 prinsip mutlak berikut:
 | **5** | **Integrasi, Keamanan, dan Pengujian** | Integrasi end-to-end antar modul, audit keamanan, rate limiting, role-based access, dan unit/integration testing. |
 | **6** | **Pilot APBN Nasional dan Evaluasi** | Uji coba publik terbatas dengan data real APBN, pengumpulan umpan balik pengguna, dan evaluasi performa. |
 
+---
+
+## 5. Checklist Keamanan & Kepatuhan Sistem
+
+Daftar periksa keamanan wajib untuk seluruh arsitektur sistem, layanan backend, dan verifikasi blockchain:
+
+1. [ ] **Enkripsi Data Sensitif at Rest (AES-256):** Perlindungan data tersimpan pada database dan media penyimpanan.
+2. [ ] **Multi-Factor Authentication (MFA):** Wajib untuk akses pengguna level administrator, auditor, dan pengelola data.
+3. [ ] **Role-Based Access Control (RBAC):** Pembatasan hak akses fungsional secara ketat (*Admin, Auditor, Data Manager, Public*).
+4. [ ] **Digital Signature untuk Semua Transaksi:** Tanda tangan digital kriptografis pada setiap data transaksi resmi yang dipublikasikan.
+5. [ ] **Hash Chain untuk Integritas Blockchain:** Rantai cryptographic hash (SHA-256) untuk pembuktian keaslian dan *immutability*.
+6. [ ] **TLS 1.3 untuk Semua Komunikasi Web:** Seluruh komunikasi REST API, web, dan antar modul wajib terenkripsi *in-transit*.
+7. [ ] **Proteksi terhadap Serangan DDoS (CDN/Cloudflare):** Penjagaan ketersediaan dashboard publik dari lonjakan traffic mencurigakan.
+8. [ ] **Logging & Monitoring Real-Time:** Pencatatan log terpusat dan pemantauan anomali sistem secara *real-time*.
+9. [ ] **Kepatuhan Regulasi (Compliance):** Kepatuhan terhadap UU ITE, UU PDP (Pelindungan Data Pribadi), dan RUU KKS.
+10. [ ] **Secure Coding Practices (CWE Top 25):** Mencegah celah kerentanan kode (*SQL Injection, XSS, CSRF, Broken Object Level Auth*).
+11. [ ] **Dependency Vulnerability Scanning:** Audit berkala pustaka dependensi (npm audit, govulncheck, Dependabot).
+12. [ ] **Incident Response Plan:** Prosedur operasi standar (SOP) kesiapsiagaan dan pemulihan insiden keamanan siber.
+
+
