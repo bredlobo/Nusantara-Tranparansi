@@ -187,3 +187,14 @@ type AnomalyFinding struct {
 	BaseMetadata
 }
 
+// PublicFeedback - Umpan Balik & Laporan Partisipasi Masyarakat pada Tahap 6 (Pilot APBN Nasional)
+type PublicFeedback struct {
+	ID          string    `gorm:"type:varchar(36);primaryKey" json:"id"`
+	CitizenName string    `gorm:"type:varchar(150);not null" json:"citizen_name"` // Disamarkan dengan MaskPII untuk publik
+	Category    string    `gorm:"type:varchar(100);not null" json:"category"`     // Proyek, Anggaran, Apresiasi, Laporan Kendala
+	TargetItem  string    `gorm:"type:varchar(255)" json:"target_item"`           // Nama Proyek / Pos Anggaran terkait
+	Rating      int       `gorm:"default:5" json:"rating"`                        // Skor evaluasi 1 - 5
+	Message     string    `gorm:"type:text;not null" json:"message"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+

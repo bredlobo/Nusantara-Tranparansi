@@ -70,6 +70,10 @@ func main() {
 	mux.HandleFunc("GET /api/v1/admin/users", audit.GetUsers(db))
 	mux.HandleFunc("POST /api/v1/admin/users", auth.RequireRole(false, database.RoleAdmin)(audit.CreateUser(db)))
 
+	// Tahap 6: Pilot APBN Nasional, Evaluasi Performa, & Umpan Balik Publik
+	mux.HandleFunc("GET /api/v1/pilot/evaluation", audit.GetPilotEvaluation(db))
+	mux.HandleFunc("POST /api/v1/pilot/feedback", audit.SubmitPublicFeedback(db))
+
 	// 4. Bungkus dengan Middleware Keamanan, CORS, dan Real-time Logging
 	handler := auth.SecurityAndCORSMiddleware(mux)
 

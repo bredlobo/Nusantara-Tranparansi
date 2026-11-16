@@ -99,6 +99,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&BlockchainRecord{},
 		&AuditLog{},
 		&AnomalyFinding{},
+		&PublicFeedback{},
 	)
 	if err != nil {
 		return fmt.Errorf("gagal melakukan automigrate: %w", err)

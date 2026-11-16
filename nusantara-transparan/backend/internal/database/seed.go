@@ -22,6 +22,7 @@ func CleanAllData(db *gorm.DB) error {
 		"blockchain_records",
 		"anomaly_findings",
 		"audit_logs",
+		"public_feedbacks",
 		"users",
 	}
 	for _, t := range tables {
