@@ -47,10 +47,10 @@ export default function Dashboard() {
               </select>
             </div>
             <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Stat label="Total APBN (pagu)" value={fmt(B)} />
-              <Stat label="Total Penerimaan" value={fmt(R)} />
-              <Stat label="Total Belanja" value={fmt(S)} />
-              <Stat label="Persentase Realisasi" value={B > 0 ? (S / B * 100).toFixed(1) + '%' : '0.0%'} hot />
+              <Stat label="Total APBN (pagu)" value={fmt(B)} delay={0} />
+              <Stat label="Total Penerimaan" value={fmt(R)} delay={90} />
+              <Stat label="Total Belanja" value={fmt(S)} delay={180} />
+              <Stat label="Persentase Realisasi" value={B > 0 ? (S / B * 100).toFixed(1) + '%' : '0.0%'} hot delay={270} />
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {cat !== 'spend' && (

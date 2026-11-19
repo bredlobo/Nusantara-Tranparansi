@@ -40,10 +40,10 @@ export default function Budget({ kind }: { kind: 'revenue' | 'expenditure' }) {
         return (
           <>
             <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Stat label={rev ? 'Target penerimaan' : 'Total anggaran'} value={fmt(T0)} />
-              <Stat label={rev ? 'Realisasi penerimaan' : 'Total realisasi'} value={fmt(R0)} />
-              <Stat label={rev ? 'Kekurangan dari target' : 'Sisa anggaran'} value={fmt(T0 - R0)} />
-              <Stat label={rev ? 'Pencapaian' : 'Persentase realisasi'} value={T0 > 0 ? (R0 / T0 * 100).toFixed(1) + '%' : '0.0%'} hot />
+              <Stat label={rev ? 'Target penerimaan' : 'Total anggaran'} value={fmt(T0)} delay={0} />
+              <Stat label={rev ? 'Realisasi penerimaan' : 'Total realisasi'} value={fmt(R0)} delay={90} />
+              <Stat label={rev ? 'Kekurangan dari target' : 'Sisa anggaran'} value={fmt(T0 - R0)} delay={180} />
+              <Stat label={rev ? 'Pencapaian' : 'Persentase realisasi'} value={T0 > 0 ? (R0 / T0 * 100).toFixed(1) + '%' : '0.0%'} hot delay={270} />
             </div>
             <div className="mb-6 grid gap-4 lg:grid-cols-2">
               <ChartBox title={rev ? 'Target vs realisasi per kategori' : 'Alokasi vs realisasi'}>
