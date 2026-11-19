@@ -1,6 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Landmark, Wallet, FolderKanban, Link2, BrainCircuit, MessageSquare, Settings, Menu, Search, Bell, User, Fingerprint as Fp } from 'lucide-react'
+import { LayoutDashboard, Landmark, Wallet, FolderKanban, Link2, BrainCircuit, MessageSquare, Settings, Menu, Search, Bell, User } from 'lucide-react'
 import { api } from '../../services/api'
 import type { Anomaly } from '../../types'
 
@@ -16,11 +16,45 @@ const nav = [
 ] as const
 
 export const Logo = () => (
-  <Link to="/" className="flex items-center gap-2 font-extrabold">
-    <Fp className="text-lime" size={24} />
-    <span>
-      Nusantara <span className="text-lime">Transparan</span>
-    </span>
+  <Link to="/" className="group flex items-center gap-3">
+    <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-lime/30 bg-gradient-to-br from-blue/30 via-ink to-ink shadow-[0_0_18px_rgba(212,255,36,0.12)] transition group-hover:border-lime/70 group-hover:shadow-[0_0_24px_rgba(212,255,36,0.28)]">
+      <svg viewBox="0 0 120 120" className="h-8 w-8" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="logo-shield" x1="12" y1="8" x2="108" y2="112" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#D4FF24" />
+            <stop offset="55%" stopColor="#1558C9" />
+            <stop offset="100%" stopColor="#0B2D6E" />
+          </linearGradient>
+          <linearGradient id="logo-bar-lime" x1="0" y1="30" x2="0" y2="90" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#D4FF24" />
+            <stop offset="100%" stopColor="#88B800" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M60 6L106 31V79C106 96.5 86.2 109.4 60 115C33.8 109.4 14 96.5 14 79V31L60 6Z"
+          fill="#060A17"
+          stroke="url(#logo-shield)"
+          strokeWidth="6"
+          strokeLinejoin="round"
+        />
+        <rect x="33" y="46" width="12" height="38" rx="6" fill="#1558C9" />
+        <path d="M39 51L81 78" stroke="url(#logo-shield)" strokeWidth="8.5" strokeLinecap="round" />
+        <rect x="54" y="56" width="12" height="28" rx="6" fill="#1558C9" fillOpacity="0.65" />
+        <rect x="75" y="34" width="12" height="50" rx="6" fill="url(#logo-bar-lime)" />
+        <circle cx="39" cy="46" r="4" fill="#D4FF24" />
+        <circle cx="81" cy="34" r="4.5" fill="#FFFFFF" stroke="#D4FF24" strokeWidth="2.5" />
+        <circle cx="60" cy="23" r="3.5" fill="#D4FF24" />
+        <path d="M39 46L60 23L81 34" stroke="#D4FF24" strokeOpacity="0.6" strokeWidth="2" strokeDasharray="3 2.5" />
+      </svg>
+    </div>
+    <div className="flex flex-col leading-none">
+      <span className="text-base font-extrabold tracking-tight text-white">
+        Nusantara <span className="text-lime">Transparan</span>
+      </span>
+      <span className="mt-1 font-mono text-[9.5px] font-semibold uppercase tracking-widest text-white/50">
+        Blockchain • AI Audit
+      </span>
+    </div>
   </Link>
 )
 
